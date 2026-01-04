@@ -4,7 +4,12 @@
   import TranslationPanel from './components/TranslationPanel.svelte'
   import SettingsModal from './components/SettingsModal.svelte'
   import Toast from './components/Toast.svelte'
-  import { getProviders, getDefaultLanguages, getAccessibilityPermission } from './services/wails'
+  import {
+    getProviders,
+    getDefaultLanguages,
+    getAccessibilityPermission,
+    getVersion,
+  } from './services/wails'
   import type { Provider, Usage } from './types'
 
   // Global state using Svelte 5 runes
@@ -16,6 +21,7 @@
   let toastVisible = $state(false)
   let accessibilityGranted = $state(true) // 默认假设已授权，避免闪烁
   let lastUsage = $state<Usage | null>(null)
+  let version = $state('v1.0')
 
   // Toast helper
   function showToast(message: string, type: 'info' | 'error' | 'success' = 'info') {
@@ -32,6 +38,7 @@
     try {
       providers = await getProviders()
       defaultLanguages = await getDefaultLanguages()
+      version = await getVersion()
 
       // Check accessibility permission on load
       accessibilityGranted = await getAccessibilityPermission()
@@ -97,7 +104,7 @@
 
   <footer class="footer">
     <div class="footer-left">
-      <span class="version">Transy v1.0</span>
+      <span class="version">Transy {version}</span>
       {#if lastUsage}
         <span class="usage-info">
           {#if lastUsage.cacheHit}

@@ -78,6 +78,13 @@ export function GetScreenRecordingPermission() {
 }
 
 /**
+ * @returns {$CancellablePromise<string>}
+ */
+export function GetVersion() {
+    return $Call.ByID(1049863377);
+}
+
+/**
  * Init initializes the service with references to app and window.
  * @param {application$0.App | null} app
  * @param {application$0.Window} window

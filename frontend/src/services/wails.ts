@@ -61,3 +61,8 @@ export async function getAccessibilityPermission(): Promise<boolean> {
 export async function takeScreenshotAndOCR(): Promise<string> {
   return await App.TakeScreenshotAndOCR()
 }
+
+// Version
+export async function getVersion(): Promise<string> {
+  return await App.GetVersion()
+}

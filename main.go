@@ -24,6 +24,12 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 // App is the main application service bound to Wails.
 type App struct {
 	app    *application.App
@@ -203,6 +209,10 @@ func (a *App) RequestScreenRecordingPermission() {
 	screenshot.RequestPermission()
 }
 
+func (a *App) GetVersion() string {
+	return version
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider Management (Delegated to Config)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -369,6 +379,7 @@ func truncate(s string, n int) string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func main() {
+	slog.Info("starting app", "version", version, "commit", commit, "date", date)
 	appService := NewApp()
 
 	app := application.New(application.Options{
