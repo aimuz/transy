@@ -130,6 +130,12 @@ func (a *App) TakeScreenshotAndOCR() (string, error) {
 	// Give a little time for window to hide
 	time.Sleep(100 * time.Millisecond)
 
+	// Check screen recording permission
+	if !screenshot.HasPermission() {
+		screenshot.RequestPermission()
+		return "", fmt.Errorf("screen recording permission required")
+	}
+
 	imagePath, err := screenshot.CaptureInteractive()
 	if err != nil {
 		// If cancelled or failed, show window again if not active
@@ -187,6 +193,14 @@ func (a *App) ToggleWindowVisibility() {
 
 func (a *App) GetAccessibilityPermission() bool {
 	return hotkey.IsAccessibilityEnabled(false)
+}
+
+func (a *App) GetScreenRecordingPermission() bool {
+	return screenshot.HasPermission()
+}
+
+func (a *App) RequestScreenRecordingPermission() {
+	screenshot.RequestPermission()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

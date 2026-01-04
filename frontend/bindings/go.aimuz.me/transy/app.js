@@ -71,6 +71,13 @@ export function GetProviders() {
 }
 
 /**
+ * @returns {$CancellablePromise<boolean>}
+ */
+export function GetScreenRecordingPermission() {
+    return $Call.ByID(1250061377);
+}
+
+/**
  * Init initializes the service with references to app and window.
  * @param {application$0.App | null} app
  * @param {application$0.Window} window
@@ -86,6 +93,13 @@ export function Init(app, window) {
  */
 export function RemoveProvider(name) {
     return $Call.ByID(3305555996, name);
+}
+
+/**
+ * @returns {$CancellablePromise<void>}
+ */
+export function RequestScreenRecordingPermission() {
+    return $Call.ByID(3897512642);
 }
 
 /**
