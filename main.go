@@ -417,7 +417,7 @@ func main() {
 		})
 
 	// Provider submenu with radio buttons
-	providerMenu := trayMenu.AddSubmenu("切换供应商")
+	providerMenu := trayMenu.AddSubmenu("翻译服务")
 	providers := appService.GetProviders()
 	for _, p := range providers {
 		provider := p // Capture loop variable
