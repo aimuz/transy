@@ -429,10 +429,12 @@ func main() {
 	}
 
 	trayMenu.AddSeparator()
-	trayMenu.Add("退出").OnClick(func(ctx *application.Context) {
-		appService.Shutdown()
-		app.Quit()
-	})
+	trayMenu.Add("退出").
+		SetAccelerator("CmdOrCtrl+Q").
+		OnClick(func(ctx *application.Context) {
+			appService.Shutdown()
+			app.Quit()
+		})
 
 	systemTray.SetMenu(trayMenu)
 
