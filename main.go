@@ -149,15 +149,24 @@ func (a *App) TakeScreenshotAndOCR() (string, error) {
 	}
 
 	// Show window and populate text
-	if a.window != nil {
-		a.window.Show()
+	a.showWindows()
+	if text != "" {
+		a.setClipboardText(text)
 	}
+	return text, nil
+}
 
-	if text != "" && a.app != nil {
+func (a *App) setClipboardText(text string) {
+	if a.app != nil {
 		a.app.Event.Emit("set-clipboard-text", text)
 	}
+}
 
-	return text, nil
+func (a *App) showWindows() {
+	if a.window != nil {
+		a.window.Show()
+		a.window.Focus()
+	}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,18 +174,14 @@ func (a *App) TakeScreenshotAndOCR() (string, error) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func (a *App) ToggleWindowVisibility() {
-	if a.window != nil {
-		a.window.Show()
-		a.window.Focus()
-	}
-
 	text, err := clipboard.GetText(a.app)
 	if err != nil {
 		slog.Error("get clipboard", "error", err)
 		return
 	}
-	if text != "" && a.app != nil {
-		a.app.Event.Emit("set-clipboard-text", text)
+	a.showWindows()
+	if text != "" {
+		a.setClipboardText(text)
 	}
 }
 
@@ -399,8 +404,7 @@ func main() {
 	// Create tray menu
 	trayMenu := app.NewMenu()
 	trayMenu.Add("显示窗口").OnClick(func(ctx *application.Context) {
-		mainWindow.Show()
-		mainWindow.Focus()
+		appService.showWindows()
 	})
 	trayMenu.Add("OCR 翻译").
 		SetAccelerator("CmdOrCtrl+Shift+O").
