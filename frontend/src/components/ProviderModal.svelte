@@ -16,17 +16,28 @@
   let isEditing = $derived(!!provider)
   let title = $derived(isEditing ? '编辑翻译提供商' : '添加翻译提供商')
 
+  // Default settings
+  const DEFAULT_SETTINGS = {
+    systemPrompt: `You are a professional translator. Translate the provided text into [Target Language] accurately.
+
+Key Requirements:
+- Preserve the logic, structure, and distinct style of the original text.
+- Use professional and context-appropriate terminology.
+- Output strictly the translation alone.
+`,
+    maxTokens: 5000,
+    temperature: 0.3,
+  }
+
   // Form state - initialized from provider prop (captures initial value intentionally)
   let type = $state<'openai' | 'openai-compatible' | 'gemini' | 'claude'>('openai')
   let name = $state('')
   let baseUrl = $state('')
   let apiKey = $state('')
   let model = $state('')
-  let systemPrompt = $state(
-    'You are a professional translator. Please translate the following text accurately while maintaining its original meaning and style'
-  )
-  let maxTokens = $state(1000)
-  let temperature = $state(0.3)
+  let systemPrompt = $state(DEFAULT_SETTINGS.systemPrompt)
+  let maxTokens = $state(DEFAULT_SETTINGS.maxTokens)
+  let temperature = $state(DEFAULT_SETTINGS.temperature)
   let disableThinking = $state(false)
   let showAdvanced = $state(false)
 
@@ -38,11 +49,9 @@
       baseUrl = provider.base_url || ''
       apiKey = provider.api_key || ''
       model = provider.model || ''
-      systemPrompt =
-        provider.system_prompt ||
-        'You are a professional translator. Please translate the following text accurately while maintaining its original meaning and style'
-      maxTokens = provider.max_tokens || 1000
-      temperature = provider.temperature || 0.3
+      systemPrompt = provider.system_prompt || DEFAULT_SETTINGS.systemPrompt
+      maxTokens = provider.max_tokens || DEFAULT_SETTINGS.maxTokens
+      temperature = provider.temperature || DEFAULT_SETTINGS.temperature
       disableThinking = provider.disable_thinking || false
     }
   })

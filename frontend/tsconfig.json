@@ -1,21 +1,16 @@
 {
-    "compilerOptions": {
-        "moduleResolution": "bundler",
-        "target": "ESNext",
-        "module": "ESNext",
-        "strict": true,
-        "skipLibCheck": true,
-        "esModuleInterop": true,
-        "allowSyntheticDefaultImports": true,
-        "resolveJsonModule": true,
-        "isolatedModules": true,
-        "noEmit": true,
-        "baseUrl": "."
-    },
-    "include": [
-        "src/**/*.ts",
-        "src/**/*.svelte",
-        "bindings/**/*.js",
-        "bindings/**/*.d.ts"
-    ]
+  "compilerOptions": {
+    "moduleResolution": "bundler",
+    "target": "ESNext",
+    "module": "ESNext",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "baseUrl": "."
+  },
+  "include": ["src/**/*.ts", "src/**/*.svelte", "bindings/**/*.js", "bindings/**/*.d.ts"]
 }
