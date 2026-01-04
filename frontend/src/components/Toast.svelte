@@ -21,20 +21,23 @@
     left: 50%;
     transform: translateX(-50%);
     padding: 12px 24px;
-    background: #333;
-    color: #fff;
+    background: var(--color-surface);
+    color: var(--color-text);
     border-radius: var(--radius-lg);
     font-size: 14px;
     z-index: 10000;
     animation: slideUp 0.3s ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   }
 
   .toast.error {
-    background: rgba(255, 59, 48, 0.9);
+    background: var(--color-danger);
+    color: white;
   }
 
   .toast.success {
-    background: rgba(52, 199, 89, 0.9);
+    background: var(--color-success-bg);
+    color: white;
   }
 
   @keyframes slideUp {

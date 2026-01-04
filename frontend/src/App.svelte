@@ -167,14 +167,14 @@
   }
 
   .permission-banner {
-    background: linear-gradient(135deg, #fff3cd 0%, #ffe69c 100%);
-    border-bottom: 1px solid #ffc107;
+    background: var(--color-warning-bg);
+    border-bottom: 1px solid var(--color-warning-text);
     padding: 10px 16px;
     display: flex;
     align-items: center;
     gap: 10px;
     font-size: 13px;
-    color: #664d03;
+    color: var(--color-warning-text);
   }
 
   .permission-icon {
@@ -184,8 +184,8 @@
   .permission-btn {
     margin-left: auto;
     padding: 4px 12px;
-    background: #ffc107;
-    color: #664d03;
+    background: var(--color-warning-text);
+    color: var(--color-warning-bg);
     border: none;
     border-radius: var(--radius-md);
     font-size: 12px;
@@ -195,7 +195,8 @@
   }
 
   .permission-btn:hover {
-    background: #ffca2c;
+    background: var(--color-warning-text);
+    opacity: 0.9;
   }
 
   .footer {
@@ -204,7 +205,7 @@
     left: 0;
     right: 0;
     padding: 12px 20px;
-    background: #fff;
+    background: var(--color-surface);
     border-top: 1px solid var(--color-border);
     display: flex;
     justify-content: space-between;
@@ -233,7 +234,7 @@
 
   .cache-badge {
     padding: 1px 6px;
-    background: #10b981;
+    background: var(--color-success-bg);
     color: white;
     border-radius: 8px;
     font-size: 10px;
@@ -256,6 +257,6 @@
   }
 
   .settings-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
+    background: var(--color-surface);
   }
 </style>

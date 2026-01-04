@@ -366,7 +366,7 @@
   }
 
   .swap-btn {
-    background: white;
+    background: var(--color-surface);
     border: none;
     padding: 8px;
     width: 32px;
@@ -381,7 +381,8 @@
   }
 
   .swap-btn:hover {
-    background: #eee;
+    background: var(--color-surface);
+    filter: brightness(0.95);
     color: var(--color-text);
   }
 
@@ -422,7 +423,7 @@
     right: 0;
     display: flex;
     gap: 4px;
-    background-color: rgba(245, 245, 247, 0.8);
+    background-color: var(--color-toolbar-bg);
     backdrop-filter: blur(2px);
     border-bottom-left-radius: 6px;
   }
@@ -435,7 +436,7 @@
 
   .tool-btn:hover:not(:disabled) {
     color: var(--color-primary);
-    background-color: rgba(0, 0, 0, 0.05);
+    background-color: var(--color-surface);
     border-radius: 4px;
   }
 
@@ -447,7 +448,7 @@
   .spinner-sm {
     width: 14px;
     height: 14px;
-    border: 2px solid rgba(0, 0, 0, 0.1);
+    border: 2px solid var(--color-border);
     border-left-color: var(--color-primary);
     border-radius: 50%;
     animation: spin 1s linear infinite;
@@ -464,7 +465,7 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background-color: rgba(255, 255, 255, 0.9);
+    background-color: var(--color-toolbar-bg);
     border-radius: var(--radius-lg);
     padding: 8px 16px;
     display: flex;

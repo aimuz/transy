@@ -274,4 +274,8 @@ Key Requirements:
     margin: 0;
     line-height: 1.4;
   }
+
+  #provider-prompt {
+    resize: none !important;
+  }
 </style>

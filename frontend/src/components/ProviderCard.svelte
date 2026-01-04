@@ -66,7 +66,7 @@
 
 <style>
   .provider-card {
-    background-color: #fff;
+    background-color: var(--color-background);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-xl);
     padding: 20px;
@@ -76,12 +76,12 @@
 
   .provider-card:hover {
     border-color: var(--color-primary);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   }
 
   .provider-card.active {
     border-color: var(--color-primary);
-    background-color: rgba(0, 122, 255, 0.02);
+    background-color: var(--color-surface);
   }
 
   .provider-header {
@@ -129,12 +129,12 @@
   }
 
   .action-btn:hover {
-    background: rgba(0, 122, 255, 0.1);
+    background: var(--color-surface);
   }
 
   .action-btn.active {
     background: var(--color-primary);
-    color: #fff;
+    color: white;
   }
 
   .delete-btn {
@@ -153,8 +153,8 @@
   }
 
   .delete-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: var(--color-text);
+    background: var(--color-surface);
+    color: var(--color-danger);
   }
 
   .provider-info {

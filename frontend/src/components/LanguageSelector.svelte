@@ -37,14 +37,15 @@
     border: 1px solid transparent;
     border-radius: var(--radius-md);
     font-size: 14px;
-    background-color: white;
+    background-color: var(--color-input-bg);
+    color: var(--color-text);
     appearance: none;
     cursor: pointer;
     transition: all var(--transition-fast);
   }
 
   select:hover {
-    background-color: #f8f8f8;
+    background-color: var(--color-surface);
   }
 
   select:focus {

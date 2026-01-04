@@ -15,12 +15,42 @@
   --color-text: #333333;
   --color-text-secondary: #666666;
   --color-text-muted: #999999;
+
+  /* Semantic Colors */
+  --color-warning-bg: #fff3cd;
+  --color-warning-text: #664d03;
+  --color-success-bg: #10b981;
+  --color-toolbar-bg: rgba(245, 245, 247, 0.8);
+  --color-input-bg: #ffffff;
+
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 12px;
   --transition-fast: 0.2s;
   --transition-normal: 0.3s;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: #0a84ff;
+    --color-primary-hover: #409cff;
+    --color-danger: #ff453a;
+    --color-danger-hover: #ff6961;
+    --color-background: #1c1c1e;
+    --color-surface: #2c2c2e;
+    --color-border: #38383a;
+    --color-text: #ffffff;
+    --color-text-secondary: #98989d;
+    --color-text-muted: #636366;
+
+    /* Semantic Colors */
+    --color-warning-bg: #5c4d08;
+    --color-warning-text: #ffda6a;
+    --color-success-bg: #059669;
+    --color-toolbar-bg: rgba(44, 44, 46, 0.8);
+    --color-input-bg: #1c1c1e;
+  }
 }
 
 body {
@@ -64,7 +94,7 @@ body {
 }
 
 .btn:hover {
-  background: #e5e5e7;
+  background: var(--color-border);
 }
 
 .btn-primary {
@@ -105,7 +135,7 @@ body {
 }
 
 .icon-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--color-surface);
   color: var(--color-text);
 }
 
@@ -134,6 +164,8 @@ body {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   font-size: 14px;
+  background-color: var(--color-input-bg);
+  color: var(--color-text);
   transition: all var(--transition-fast);
 }
 
@@ -150,6 +182,17 @@ body {
   resize: vertical;
 }
 
+/* Number input spinners - hide native spinners for consistent styling */
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 /* Select styles */
 select {
   width: 100%;
@@ -157,14 +200,15 @@ select {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   font-size: 14px;
-  background-color: white;
+  background-color: var(--color-input-bg);
+  color: var(--color-text);
   appearance: none;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 
 select:hover {
-  background-color: #f8f8f8;
+  background-color: var(--color-surface);
 }
 
 select:focus {
@@ -196,7 +240,7 @@ select:focus {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #ccc;
+  background-color: var(--color-border);
   transition: var(--transition-normal);
   border-radius: 24px;
 }
@@ -225,7 +269,7 @@ input:checked + .slider:before {
 /* Textarea base */
 textarea {
   border: none;
-  background: none;
+  background: transparent;
   resize: none;
   font-size: 15px;
   line-height: 1.5;
@@ -240,11 +284,36 @@ textarea::placeholder {
   color: var(--color-text-muted);
 }
 
+textarea::-webkit-resizer {
+  background-color: var(--color-border);
+}
+
+/* Custom scrollbar for dark mode */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-muted);
+}
+
 /* Animations */
 @keyframes spin {
   0% {
     transform: rotate(0deg);
   }
+
   100% {
     transform: rotate(360deg);
   }
@@ -253,7 +322,7 @@ textarea::placeholder {
 .loading-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid #f3f3f3;
+  border: 2px solid var(--color-border);
   border-top: 2px solid var(--color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
