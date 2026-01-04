@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { Events, Browser } from '@wailsio/runtime'
   import TranslationPanel from './components/TranslationPanel.svelte'
   import SettingsModal from './components/SettingsModal.svelte'
   import Toast from './components/Toast.svelte'
@@ -52,32 +53,26 @@
 
   // Open system accessibility settings
   function openAccessibilitySettings() {
-    // 使用 Wails 的 BrowserOpenURL 打开系统设置
-    if (window.runtime) {
-      window.runtime.BrowserOpenURL(
-        'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
-      )
-    }
+    // 使用 Wails v3 Browser API 打开系统设置
+    Browser.OpenURL('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility')
   }
 
   onMount(() => {
     loadData()
 
-    // Listen for clipboard events from backend
-    if (window.runtime) {
-      window.runtime.EventsOn('set-clipboard-text', (text: unknown) => {
-        // Dispatch custom event that TranslationPanel can listen to
-        window.dispatchEvent(new CustomEvent('clipboard-text', { detail: text as string }))
-      })
+    // Listen for clipboard events from backend (Wails v3 Events API)
+    Events.On('set-clipboard-text', (event: { data: unknown }) => {
+      // Dispatch custom event that TranslationPanel can listen to
+      window.dispatchEvent(new CustomEvent('clipboard-text', { detail: event.data as string }))
+    })
 
-      // Listen for accessibility permission status
-      window.runtime.EventsOn('accessibility-permission', (granted: unknown) => {
-        accessibilityGranted = granted as boolean
-        if (granted) {
-          showToast('辅助功能权限已授予，快捷键已启用', 'success')
-        }
-      })
-    }
+    // Listen for accessibility permission status
+    Events.On('accessibility-permission', (event: { data: unknown }) => {
+      accessibilityGranted = event.data as boolean
+      if (event.data) {
+        showToast('辅助功能权限已授予，快捷键已启用', 'success')
+      }
+    })
   })
 </script>
 

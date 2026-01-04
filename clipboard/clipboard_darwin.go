@@ -3,9 +3,10 @@
 package clipboard
 
 import (
-	"context"
 	"errors"
 	"sync"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // #cgo CFLAGS: -x objective-c
@@ -20,7 +21,7 @@ import "C"
 
 var clipboardLock sync.RWMutex
 
-func getClipboardContent(_ context.Context) (string, error) {
+func getClipboardContent(_ *application.App) (string, error) {
 	clipboardLock.RLock()
 	defer clipboardLock.RUnlock()
 

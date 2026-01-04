@@ -13,7 +13,7 @@ import (
 func CaptureInteractive() (string, error) {
 	// Create a temporary file path
 	tmpDir := os.TempDir()
-	fileName := fmt.Sprintf("fanyihub_screenshot_%d.png", time.Now().UnixNano())
+	fileName := fmt.Sprintf("transy_screenshot_%d.png", time.Now().UnixNano())
 	filePath := filepath.Join(tmpDir, fileName)
 
 	// Command: screencapture -i <path>

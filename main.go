@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"embed"
 	"fmt"
 	"log/slog"
@@ -9,11 +8,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/mac"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 	"go.aimuz.me/transy/cache"
 	"go.aimuz.me/transy/clipboard"
 	"go.aimuz.me/transy/config"
@@ -28,9 +24,10 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-// App is the main application struct bound to Wails.
+// App is the main application service bound to Wails.
 type App struct {
-	ctx    context.Context
+	app    *application.App
+	window application.Window
 	cfg    *config.Config
 	hotkey *hotkey.HotkeyManager
 	cache  *cache.Cache
@@ -41,11 +38,13 @@ func NewApp() *App {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Lifecycle
+// Initialization (called from main)
 // ─────────────────────────────────────────────────────────────────────────────
 
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
+// Init initializes the service with references to app and window.
+func (a *App) Init(app *application.App, window application.Window) {
+	a.app = app
+	a.window = window
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -60,7 +59,8 @@ func (a *App) startup(ctx context.Context) {
 	a.setupHotkey()
 }
 
-func (a *App) shutdown(_ context.Context) {
+// Shutdown cleans up resources.
+func (a *App) Shutdown() {
 	if a.hotkey != nil {
 		a.hotkey.Stop()
 	}
@@ -104,7 +104,9 @@ func (a *App) setupHotkey() {
 	)
 
 	a.hotkey.SetStatusCallback(func(granted bool) {
-		runtime.EventsEmit(a.ctx, "accessibility-permission", granted)
+		if a.app != nil {
+			a.app.Event.Emit("accessibility-permission", granted)
+		}
 		if granted {
 			slog.Info("accessibility permission granted")
 		} else {
@@ -121,7 +123,9 @@ func (a *App) setupHotkey() {
 // Returns the recognized text.
 func (a *App) TakeScreenshotAndOCR() (string, error) {
 	// Hide window to allow capturing screen behind it
-	runtime.WindowHide(a.ctx)
+	if a.window != nil {
+		a.window.Hide()
+	}
 
 	// Give a little time for window to hide
 	time.Sleep(100 * time.Millisecond)
@@ -129,22 +133,28 @@ func (a *App) TakeScreenshotAndOCR() (string, error) {
 	imagePath, err := screenshot.CaptureInteractive()
 	if err != nil {
 		// If cancelled or failed, show window again if not active
-		runtime.WindowShow(a.ctx)
+		if a.window != nil {
+			a.window.Show()
+		}
 		return "", fmt.Errorf("capture screenshot: %w", err)
 	}
 	defer os.Remove(imagePath) // Clean up temp file
 
 	text, err := ocr.RecognizeText(imagePath)
 	if err != nil {
-		runtime.WindowShow(a.ctx)
+		if a.window != nil {
+			a.window.Show()
+		}
 		return "", fmt.Errorf("recognize text: %w", err)
 	}
 
 	// Show window and populate text
-	runtime.WindowShow(a.ctx)
+	if a.window != nil {
+		a.window.Show()
+	}
 
-	if text != "" {
-		runtime.EventsEmit(a.ctx, "set-clipboard-text", text)
+	if text != "" && a.app != nil {
+		a.app.Event.Emit("set-clipboard-text", text)
 	}
 
 	return text, nil
@@ -155,15 +165,18 @@ func (a *App) TakeScreenshotAndOCR() (string, error) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func (a *App) ToggleWindowVisibility() {
-	runtime.WindowShow(a.ctx)
+	if a.window != nil {
+		a.window.Show()
+		a.window.Focus()
+	}
 
-	text, err := clipboard.GetText(a.ctx)
+	text, err := clipboard.GetText(a.app)
 	if err != nil {
 		slog.Error("get clipboard", "error", err)
 		return
 	}
-	if text != "" {
-		runtime.EventsEmit(a.ctx, "set-clipboard-text", text)
+	if text != "" && a.app != nil {
+		a.app.Event.Emit("set-clipboard-text", text)
 	}
 }
 
@@ -337,27 +350,90 @@ func truncate(s string, n int) string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func main() {
-	app := NewApp()
+	appService := NewApp()
 
-	err := wails.Run(&options.App{
+	app := application.New(application.Options{
+		Name:        "Transy",
+		Description: "AI-Powered Translation Tool",
+		Services: []application.Service{
+			application.NewService(appService),
+		},
+		Assets: application.AssetOptions{
+			Handler: application.BundledAssetFileServer(assets),
+		},
+		Mac: application.MacOptions{
+			// Don't quit when all windows are closed (we have a system tray)
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
+		},
+	})
+
+	// Create main window
+	mainWindow := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "Transy",
 		Width:  1024,
 		Height: 768,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
+		URL:    "/",
+		Mac: application.MacWindow{
+			TitleBar:                application.MacTitleBarHiddenInsetUnified,
+			InvisibleTitleBarHeight: 38,
 		},
-		OnStartup:  app.startup,
-		OnShutdown: app.shutdown,
-		Bind:       []any{app},
-		Mac: &mac.Options{
-			TitleBar: mac.TitleBarHidden(),
-			About: &mac.AboutInfo{
-				Title:   "Transy",
-				Message: "©2025 Transy. All rights reserved.",
-			},
-		},
+		DevToolsEnabled: true,
 	})
-	if err != nil {
+
+	// Intercept window close: hide instead of destroy so tray can reopen
+	mainWindow.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		e.Cancel() // Prevent actual close
+		mainWindow.Hide()
+	})
+
+	// Initialize service with app and window references
+	appService.Init(app, mainWindow)
+
+	// Setup system tray
+	systemTray := app.SystemTray.New()
+
+	// Use custom tray icon
+	// using SetIcon to render original colors instead of template (monochrome mask)
+	systemTray.SetIcon(trayIconBytes)
+
+	// Create tray menu
+	trayMenu := app.NewMenu()
+	trayMenu.Add("显示窗口").OnClick(func(ctx *application.Context) {
+		mainWindow.Show()
+		mainWindow.Focus()
+	})
+	trayMenu.Add("OCR 翻译").
+		SetAccelerator("CmdOrCtrl+Shift+O").
+		OnClick(func(ctx *application.Context) {
+			go func() {
+				if _, err := appService.TakeScreenshotAndOCR(); err != nil {
+					slog.Error("ocr from tray", "error", err)
+				}
+			}()
+		})
+
+	// Provider submenu with radio buttons
+	providerMenu := trayMenu.AddSubmenu("切换供应商")
+	providers := appService.GetProviders()
+	for _, p := range providers {
+		provider := p // Capture loop variable
+		providerMenu.AddRadio(provider.Name, provider.Active).OnClick(func(ctx *application.Context) {
+			if err := appService.SetProviderActive(provider.Name); err != nil {
+				slog.Error("set provider active", "error", err)
+			}
+		})
+	}
+
+	trayMenu.AddSeparator()
+	trayMenu.Add("退出").OnClick(func(ctx *application.Context) {
+		appService.Shutdown()
+		app.Quit()
+	})
+
+	systemTray.SetMenu(trayMenu)
+
+	// Run application
+	if err := app.Run(); err != nil {
 		slog.Error("run app", "error", err)
 	}
 }

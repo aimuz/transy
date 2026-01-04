@@ -10,16 +10,12 @@
         "resolveJsonModule": true,
         "isolatedModules": true,
         "noEmit": true,
-        "baseUrl": ".",
-        "paths": {
-            "@wailsjs/*": [
-                "wailsjs/*"
-            ]
-        }
+        "baseUrl": "."
     },
     "include": [
         "src/**/*.ts",
         "src/**/*.svelte",
-        "wailsjs/**/*.ts"
+        "bindings/**/*.js",
+        "bindings/**/*.d.ts"
     ]
 }

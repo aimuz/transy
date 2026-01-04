@@ -3,14 +3,18 @@
 package clipboard
 
 import (
-	"context"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"errors"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-func getClipboardContent(ctx context.Context) (string, error) {
-	clipboardText, err := runtime.ClipboardGetText(ctx)
-	if err != nil {
-		return "", err
+func getClipboardContent(app *application.App) (string, error) {
+	if app == nil {
+		return "", errors.New("app is nil")
 	}
-	return clipboardText, nil
+	text, ok := app.Clipboard.Text()
+	if !ok {
+		return "", errors.New("failed to get clipboard content")
+	}
+	return text, nil
 }

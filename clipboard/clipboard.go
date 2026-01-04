@@ -1,7 +1,9 @@
 package clipboard
 
-import "context"
+import (
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
 
-func GetText(ctx context.Context) (string, error) {
-	return getClipboardContent(ctx)
+func GetText(app *application.App) (string, error) {
+	return getClipboardContent(app)
 }
