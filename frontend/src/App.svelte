@@ -160,7 +160,6 @@
     display: flex;
     flex-direction: column;
     padding: 0 16px 60px;
-    max-width: 1200px;
     margin: 0 auto;
     width: 100%;
     height: 100%;
