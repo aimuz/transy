@@ -169,7 +169,8 @@ tasks:
 
   run:
     cmds:
-      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/{MacOS,Resources}"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
       - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
       - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Info.plist"

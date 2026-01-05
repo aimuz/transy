@@ -65,3 +65,34 @@ export const LANGUAGE_NAME_MAP: Record<string, string> = Object.fromEntries(
 export const LANGUAGE_CODE_MAP: Record<string, string> = Object.fromEntries(
   LANGUAGES.map((l) => [l.code, l.name])
 )
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live Translation Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type LiveTranscript = {
+  id: string
+  text: string
+  translated: string
+  timestamp: number
+  isFinal: boolean
+  confidence: number
+}
+
+export type LiveStatus = {
+  active: boolean
+  sourceLang: string
+  targetLang: string
+  duration: number
+  sttProvider: string
+  transcriptCount: number
+}
+
+export type STTProviderInfo = {
+  name: string
+  displayName: string
+  isLocal: boolean
+  requiresSetup: boolean
+  setupProgress: number
+  isReady: boolean
+}

@@ -66,3 +66,38 @@ export async function takeScreenshotAndOCR(): Promise<string> {
 export async function getVersion(): Promise<string> {
   return await App.GetVersion()
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live Translation
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type { LiveStatus, STTProviderInfo } from '../types'
+
+export async function startLiveTranslation(sourceLang: string, targetLang: string): Promise<void> {
+  await App.StartLiveTranslation(sourceLang, targetLang)
+}
+
+export async function stopLiveTranslation(): Promise<void> {
+  await App.StopLiveTranslation()
+}
+
+export async function getLiveStatus(): Promise<LiveStatus> {
+  return (await App.GetLiveStatus()) as LiveStatus
+}
+
+export async function getSTTProviders(): Promise<STTProviderInfo[]> {
+  const providers = await App.GetSTTProviders()
+  return (providers || []) as STTProviderInfo[]
+}
+
+export async function setSTTProvider(name: string): Promise<void> {
+  await App.SetSTTProvider(name)
+}
+
+export async function setupSTTProvider(name: string): Promise<void> {
+  await App.SetupSTTProvider(name)
+}
+
+export async function getSTTSetupProgress(name: string): Promise<number> {
+  return await App.GetSTTSetupProgress(name)
+}

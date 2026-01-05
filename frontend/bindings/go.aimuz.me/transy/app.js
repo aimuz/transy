@@ -62,12 +62,41 @@ export function GetDefaultLanguages() {
 }
 
 /**
+ * GetLiveStatus returns the current live translation status.
+ * @returns {$CancellablePromise<types$0.LiveStatus>}
+ */
+export function GetLiveStatus() {
+    return $Call.ByID(1415338303).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType4($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<types$0.Provider[]>}
  */
 export function GetProviders() {
     return $Call.ByID(2525123639).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType4($result);
+        return $$createType5($result);
     }));
+}
+
+/**
+ * GetSTTProviders returns available STT providers.
+ * @returns {$CancellablePromise<types$0.STTProviderInfo[]>}
+ */
+export function GetSTTProviders() {
+    return $Call.ByID(4069245102).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType7($result);
+    }));
+}
+
+/**
+ * GetSTTSetupProgress returns the setup progress for a provider.
+ * @param {string} name
+ * @returns {$CancellablePromise<number>}
+ */
+export function GetSTTSetupProgress(name) {
+    return $Call.ByID(3416966226, name);
 }
 
 /**
@@ -127,11 +156,47 @@ export function SetProviderActive(name) {
 }
 
 /**
+ * SetSTTProvider sets the active STT provider for live translation.
+ * @param {string} name
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetSTTProvider(name) {
+    return $Call.ByID(485975085, name);
+}
+
+/**
+ * SetupSTTProvider downloads/initializes an STT provider.
+ * @param {string} name
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetupSTTProvider(name) {
+    return $Call.ByID(109836374, name);
+}
+
+/**
  * Shutdown cleans up resources.
  * @returns {$CancellablePromise<void>}
  */
 export function Shutdown() {
     return $Call.ByID(2987688963);
+}
+
+/**
+ * StartLiveTranslation starts real-time audio translation.
+ * @param {string} sourceLang
+ * @param {string} targetLang
+ * @returns {$CancellablePromise<void>}
+ */
+export function StartLiveTranslation(sourceLang, targetLang) {
+    return $Call.ByID(635984740, sourceLang, targetLang);
+}
+
+/**
+ * StopLiveTranslation stops real-time audio translation.
+ * @returns {$CancellablePromise<void>}
+ */
+export function StopLiveTranslation() {
+    return $Call.ByID(161307806);
 }
 
 /**
@@ -156,7 +221,7 @@ export function ToggleWindowVisibility() {
  */
 export function TranslateWithLLM(req) {
     return $Call.ByID(2352175956, req).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType5($result);
+        return $$createType8($result);
     }));
 }
 
@@ -174,5 +239,8 @@ const $$createType0 = types$0.DetectResult.createFrom;
 const $$createType1 = types$0.Provider.createFrom;
 const $$createType2 = $Create.Nullable($$createType1);
 const $$createType3 = $Create.Map($Create.Any, $Create.Any);
-const $$createType4 = $Create.Array($$createType1);
-const $$createType5 = types$0.TranslateResult.createFrom;
+const $$createType4 = types$0.LiveStatus.createFrom;
+const $$createType5 = $Create.Array($$createType1);
+const $$createType6 = types$0.STTProviderInfo.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = types$0.TranslateResult.createFrom;

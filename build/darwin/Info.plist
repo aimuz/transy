@@ -26,5 +26,9 @@
         <string>©2026 Transy. All rights reserved.</string>
         <key>LSUIElement</key>
         <true/>
+        <key>NSSpeechRecognitionUsageDescription</key>
+        <string>Transy uses speech recognition for real-time translation of audio content.</string>
+        <key>NSMicrophoneUsageDescription</key>
+        <string>Transy needs microphone access for live speech-to-text translation.</string>
     </dict>
 </plist>

@@ -16,9 +16,11 @@ import (
 	"go.aimuz.me/transy/hotkey"
 	"go.aimuz.me/transy/internal/types"
 	"go.aimuz.me/transy/langdetect"
+	"go.aimuz.me/transy/livetranslate"
 	"go.aimuz.me/transy/llm"
 	"go.aimuz.me/transy/ocr"
 	"go.aimuz.me/transy/screenshot"
+	"go.aimuz.me/transy/stt"
 )
 
 //go:embed all:frontend/dist
@@ -37,6 +39,10 @@ type App struct {
 	cfg    *config.Config
 	hotkey *hotkey.HotkeyManager
 	cache  *cache.Cache
+
+	// Live translation
+	liveService *livetranslate.Service
+	sttRegistry *stt.Registry
 }
 
 func NewApp() *App {
@@ -62,6 +68,9 @@ func (a *App) Init(app *application.App, window application.Window) {
 	// Initialize cache
 	a.setupCache()
 
+	// Initialize STT providers
+	a.setupSTT()
+
 	a.setupHotkey()
 }
 
@@ -69,6 +78,12 @@ func (a *App) Init(app *application.App, window application.Window) {
 func (a *App) Shutdown() {
 	if a.hotkey != nil {
 		a.hotkey.Stop()
+	}
+	if a.liveService != nil {
+		a.liveService.Close()
+	}
+	if a.sttRegistry != nil {
+		a.sttRegistry.Close()
 	}
 	if a.cache != nil {
 		if err := a.cache.Close(); err != nil {
@@ -92,6 +107,213 @@ func (a *App) setupCache() {
 	}
 	a.cache = c
 	slog.Info("cache initialized", "path", cachePath)
+}
+
+func (a *App) setupSTT() {
+	a.sttRegistry = stt.NewRegistry()
+
+	// Register macOS Speech provider first (lowest latency, on-device)
+	speechProvider, err := stt.NewSpeechDarwin()
+	if err != nil {
+		slog.Error("init macOS Speech provider", "error", err)
+	} else if speechProvider.IsReady() {
+		a.sttRegistry.Register(speechProvider)
+		slog.Info("registered macOS Speech provider (low latency)")
+	} else {
+		slog.Warn("macOS Speech provider not authorized - will prompt on first use")
+		a.sttRegistry.Register(speechProvider) // Still register, will prompt for auth
+	}
+
+	// Register API provider if configured
+	activeProvider := a.cfg.GetActiveProvider()
+	if activeProvider != nil && activeProvider.APIKey != "" {
+		apiProvider := stt.NewWhisperAPI(stt.WhisperAPIConfig{
+			APIKey: activeProvider.APIKey,
+		})
+		a.sttRegistry.Register(apiProvider)
+		slog.Info("registered OpenAI Whisper API provider")
+	}
+
+	// Register local whisper provider (may not be ready if whisper.cpp not installed)
+	localProvider, err := stt.NewWhisperLocal(stt.WhisperLocalConfig{
+		ModelSize: "base",
+	})
+	if err != nil {
+		slog.Error("init whisper local", "error", err)
+	} else {
+		a.sttRegistry.Register(localProvider)
+		if localProvider.HasBinary() {
+			slog.Info("registered Whisper Local provider", "ready", localProvider.IsReady())
+		} else {
+			slog.Warn("Whisper Local registered but whisper.cpp binary not found - install with: brew install whisper-cpp")
+		}
+	}
+
+	slog.Info("STT providers initialized", "count", len(a.sttRegistry.List()))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live Translation
+// ─────────────────────────────────────────────────────────────────────────────
+
+// StartLiveTranslation starts real-time audio translation.
+func (a *App) StartLiveTranslation(sourceLang, targetLang string) error {
+	if a.liveService == nil {
+		// Create service with default STT provider
+		provider := a.sttRegistry.Get("whisper-local")
+		if provider == nil {
+			providers := a.sttRegistry.List()
+			if len(providers) > 0 {
+				provider = providers[0]
+			}
+		}
+
+		if provider == nil {
+			return fmt.Errorf("no STT provider available")
+		}
+
+		cfg := livetranslate.DefaultConfig()
+		cfg.STTProvider = provider
+		cfg.TranslateFunc = func(text, context, srcLang, dstLang string) (string, error) {
+			result, err := a.TranslateWithLLM(types.TranslateRequest{
+				Text:       text,
+				SourceLang: srcLang,
+				TargetLang: dstLang,
+				Context:    context,
+			})
+			if err != nil {
+				return "", err
+			}
+			return result.Text, nil
+		}
+
+		service, err := livetranslate.NewService(cfg)
+		if err != nil {
+			return fmt.Errorf("create live service: %w", err)
+		}
+
+		// Set transcript callback to emit events
+		service.OnTranscript(func(t types.LiveTranscript) {
+			if a.app != nil {
+				a.app.Event.Emit("live-transcript", t)
+			}
+		})
+
+		service.OnError(func(err error) {
+			slog.Error("live translation error", "error", err)
+		})
+
+		a.liveService = service
+	}
+
+	return a.liveService.Start(sourceLang, targetLang)
+}
+
+// StopLiveTranslation stops real-time audio translation.
+func (a *App) StopLiveTranslation() error {
+	if a.liveService == nil {
+		return nil
+	}
+	return a.liveService.Stop()
+}
+
+// GetLiveStatus returns the current live translation status.
+func (a *App) GetLiveStatus() types.LiveStatus {
+	if a.liveService == nil {
+		return types.LiveStatus{}
+	}
+	return a.liveService.Status()
+}
+
+// GetSTTProviders returns available STT providers.
+func (a *App) GetSTTProviders() []types.STTProviderInfo {
+	if a.sttRegistry == nil {
+		return nil
+	}
+
+	providers := a.sttRegistry.List()
+	result := make([]types.STTProviderInfo, len(providers))
+	for i, p := range providers {
+		result[i] = types.STTProviderInfo{
+			Name:          p.Name(),
+			DisplayName:   p.DisplayName(),
+			IsLocal:       p.IsLocal(),
+			RequiresSetup: p.RequiresSetup(),
+			SetupProgress: p.SetupProgress(),
+			IsReady:       p.IsReady(),
+		}
+	}
+	return result
+}
+
+// SetSTTProvider sets the active STT provider for live translation.
+func (a *App) SetSTTProvider(name string) error {
+	if a.sttRegistry == nil {
+		return fmt.Errorf("STT registry not initialized")
+	}
+
+	provider := a.sttRegistry.Get(name)
+	if provider == nil {
+		return fmt.Errorf("provider not found: %s", name)
+	}
+
+	if a.liveService != nil {
+		a.liveService.SetSTTProvider(provider)
+	}
+	return nil
+}
+
+// SetupSTTProvider downloads/initializes an STT provider.
+func (a *App) SetupSTTProvider(name string) error {
+	if a.sttRegistry == nil {
+		return fmt.Errorf("STT registry not initialized")
+	}
+
+	provider := a.sttRegistry.Get(name)
+	if provider == nil {
+		return fmt.Errorf("provider not found: %s", name)
+	}
+
+	// Run setup in background, emit progress events
+	go func() {
+		err := provider.Setup(func(percent int) {
+			if a.app != nil {
+				a.app.Event.Emit("stt-setup-progress", map[string]interface{}{
+					"provider": name,
+					"progress": percent,
+				})
+			}
+		})
+		if err != nil {
+			slog.Error("STT setup failed", "provider", name, "error", err)
+			if a.app != nil {
+				a.app.Event.Emit("stt-setup-error", map[string]interface{}{
+					"provider": name,
+					"error":    err.Error(),
+				})
+			}
+		} else {
+			if a.app != nil {
+				a.app.Event.Emit("stt-setup-complete", name)
+			}
+		}
+	}()
+
+	return nil
+}
+
+// GetSTTSetupProgress returns the setup progress for a provider.
+func (a *App) GetSTTSetupProgress(name string) int {
+	if a.sttRegistry == nil {
+		return -1
+	}
+
+	provider := a.sttRegistry.Get(name)
+	if provider == nil {
+		return -1
+	}
+
+	return provider.SetupProgress()
 }
 
 func (a *App) setupHotkey() {
@@ -355,12 +577,21 @@ func (a *App) cacheTranslation(key, text string, usage types.Usage) {
 func (a *App) callLLM(p *types.Provider, req types.TranslateRequest) (string, types.Usage, error) {
 	client := llm.NewClient(p)
 
+	content := fmt.Sprintf(
+		"please translate the following text from %s to %s:\n\n%s",
+		req.SourceLang, req.TargetLang, req.Text,
+	)
+
+	if req.Context != "" {
+		content = fmt.Sprintf(
+			"Context (previous sentences): %s\n\n%s",
+			req.Context, content,
+		)
+	}
+
 	messages := []llm.Message{
 		{Role: "system", Content: p.SystemPrompt},
-		{Role: "user", Content: fmt.Sprintf(
-			"please translate the following text from %s to %s:\n\n%s",
-			req.SourceLang, req.TargetLang, req.Text,
-		)},
+		{Role: "user", Content: content},
 	}
 
 	return client.Complete(messages)

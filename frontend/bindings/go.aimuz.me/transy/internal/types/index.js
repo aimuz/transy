@@ -4,7 +4,9 @@
 
 export {
     DetectResult,
+    LiveStatus,
     Provider,
+    STTProviderInfo,
     TranslateRequest,
     TranslateResult,
     Usage

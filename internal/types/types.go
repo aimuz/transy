@@ -26,6 +26,7 @@ type TranslateRequest struct {
 	Text       string `json:"text"`
 	SourceLang string `json:"sourceLang"`
 	TargetLang string `json:"targetLang"`
+	Context    string `json:"context,omitempty"` // Previous context for better coherence
 }
 
 // DetectResult represents the result of language detection.
@@ -47,4 +48,38 @@ type Usage struct {
 type TranslateResult struct {
 	Text  string `json:"text"`
 	Usage Usage  `json:"usage"`
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live Translation Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+// LiveTranscript represents a real-time transcription result.
+type LiveTranscript struct {
+	ID         string  `json:"id"`         // Unique identifier
+	Text       string  `json:"text"`       // Original text
+	Translated string  `json:"translated"` // Translated text
+	Timestamp  int64   `json:"timestamp"`  // Unix timestamp in milliseconds
+	IsFinal    bool    `json:"isFinal"`    // Whether this is the final result
+	Confidence float64 `json:"confidence"` // Recognition confidence 0-1
+}
+
+// LiveStatus represents the status of live translation.
+type LiveStatus struct {
+	Active          bool   `json:"active"`
+	SourceLang      string `json:"sourceLang"`
+	TargetLang      string `json:"targetLang"`
+	Duration        int64  `json:"duration"`        // Running duration in seconds
+	STTProvider     string `json:"sttProvider"`     // Current STT provider name
+	TranscriptCount int    `json:"transcriptCount"` // Number of transcribed segments
+}
+
+// STTProviderInfo represents information about an STT provider.
+type STTProviderInfo struct {
+	Name          string `json:"name"`          // Provider identifier
+	DisplayName   string `json:"displayName"`   // Human-readable name
+	IsLocal       bool   `json:"isLocal"`       // Whether it runs locally
+	RequiresSetup bool   `json:"requiresSetup"` // Whether setup is needed (e.g., model download)
+	SetupProgress int    `json:"setupProgress"` // Setup progress 0-100, -1 if not started
+	IsReady       bool   `json:"isReady"`       // Whether the provider is ready to use
 }

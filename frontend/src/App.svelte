@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { Events, Browser } from '@wailsio/runtime'
   import TranslationPanel from './components/TranslationPanel.svelte'
+  import LiveTranslation from './components/LiveTranslation.svelte'
   import SettingsModal from './components/SettingsModal.svelte'
   import Toast from './components/Toast.svelte'
   import {
@@ -22,6 +23,7 @@
   let accessibilityGranted = $state(true) // 默认假设已授权，避免闪烁
   let lastUsage = $state<Usage | null>(null)
   let version = $state('v1.0')
+  let activeTab = $state<'translate' | 'live'>('translate')
 
   // Toast helper
   function showToast(message: string, type: 'info' | 'error' | 'success' = 'info') {
@@ -95,11 +97,33 @@
   {/if}
 
   <main class="container">
-    <TranslationPanel
-      {defaultLanguages}
-      onToast={showToast}
-      onUsageChange={(u) => (lastUsage = u)}
-    />
+    <div class="tabs">
+      <button
+        class="tab-btn"
+        class:active={activeTab === 'translate'}
+        onclick={() => (activeTab = 'translate')}
+      >
+        翻译
+      </button>
+      <button
+        class="tab-btn"
+        class:active={activeTab === 'live'}
+        onclick={() => (activeTab = 'live')}
+      >
+        <span>实时</span>
+        <span class="beta-badge">beta</span>
+      </button>
+    </div>
+
+    {#if activeTab === 'translate'}
+      <TranslationPanel
+        {defaultLanguages}
+        onToast={showToast}
+        onUsageChange={(u) => (lastUsage = u)}
+      />
+    {:else}
+      <LiveTranslation onToast={showToast} />
+    {/if}
   </main>
 
   <footer class="footer">
@@ -165,15 +189,65 @@
     height: 100%;
   }
 
+  .tabs {
+    display: flex;
+    background: var(--color-surface);
+    padding: 4px;
+    border-radius: var(--radius-lg);
+    margin: 0 auto 12px auto; /* Center tabs */
+    width: fit-content;
+    border: 1px solid var(--color-border);
+  }
+
+  .tab-btn {
+    display: flex;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 16px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .tab-btn:hover {
+    color: var(--color-text);
+  }
+
+  .tab-btn.active {
+    background: var(--color-background);
+    color: var(--color-text);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    font-weight: 600;
+  }
+
+  .beta-badge {
+    font-size: 10px;
+    background: var(--color-primary);
+    color: white;
+    padding: 1px 5px;
+    border-radius: 4px;
+    line-height: 1.2;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    opacity: 0.9;
+  }
+
   .permission-banner {
-    background: var(--color-warning-bg);
-    border-bottom: 1px solid var(--color-warning-text);
+    background: rgba(255, 149, 0, 0.1);
+    border-bottom: 1px solid rgba(255, 149, 0, 0.2);
     padding: 10px 16px;
     display: flex;
     align-items: center;
     gap: 10px;
     font-size: 13px;
-    color: var(--color-warning-text);
+    color: var(--color-warning);
   }
 
   .permission-icon {
@@ -183,8 +257,8 @@
   .permission-btn {
     margin-left: auto;
     padding: 4px 12px;
-    background: var(--color-warning-text);
-    color: var(--color-warning-bg);
+    background: var(--color-warning);
+    color: white;
     border: none;
     border-radius: var(--radius-md);
     font-size: 12px;
@@ -194,7 +268,7 @@
   }
 
   .permission-btn:hover {
-    background: var(--color-warning-text);
+    opacity: 0.9;
     opacity: 0.9;
   }
 
@@ -233,10 +307,13 @@
 
   .cache-badge {
     padding: 1px 6px;
-    background: var(--color-success-bg);
-    color: white;
-    border-radius: 8px;
+    background: transparent;
+    border: 1px solid var(--color-success);
+    color: var(--color-success);
+    border-radius: 6px;
     font-size: 10px;
+    font-weight: 500;
+    opacity: 0.8;
   }
 
   .token-count {
