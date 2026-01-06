@@ -53,22 +53,22 @@ const (
 	EventSpeechMaxDuration // Speech exceeded maxSpeechDur
 )
 
-// ProcessResult contains the result of processing audio samples.
-type ProcessResult struct {
+// VADResult contains the result of processing audio samples.
+type VADResult struct {
 	Event            SpeechEvent
 	ShouldTranscribe bool // Whether transcription should be triggered
 }
 
 // Process processes audio samples and returns detected speech events.
 // sampleRate is required to calculate durations (samples per second).
-func (v *VAD) Process(samples []float32, sampleRate int) ProcessResult {
+func (v *VAD) Process(samples []float32, sampleRate int) VADResult {
 	now := time.Now()
 
 	// Calculate RMS for voice activity detection
 	rms := calculateRMS(samples)
 	isSpeech := rms > v.threshold
 
-	result := ProcessResult{
+	result := VADResult{
 		Event: SpeechEvent{
 			Timestamp: now,
 			Type:      EventNone,

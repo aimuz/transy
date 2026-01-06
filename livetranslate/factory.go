@@ -18,7 +18,7 @@ type FactoryConfig struct {
 	// Mode selects the implementation: "realtime" or "transcription" (default)
 	Mode string
 
-	// Realtime mode configuration (OpenAI Realtime API)
+	// Realtime mode configuration (OpenAI Realtime API via WebRTC)
 	APIKey       string
 	Model        string
 	SystemPrompt string
@@ -28,10 +28,6 @@ type FactoryConfig struct {
 	STTProvider   stt.Provider
 	TranslateFunc TranslateFunc
 	VADThreshold  float32
-
-	// Event handlers (optional, for backward compatibility)
-	OnTranscript func(types.LiveTranscript)
-	OnError      func(error)
 }
 
 // New creates a new LiveTranslator based on the configuration.
@@ -43,7 +39,7 @@ func New(cfg FactoryConfig) (types.LiveTranslator, error) {
 	return newLocalTranslator(cfg)
 }
 
-// newRealtimeTranslator creates an OpenAI Realtime API based translator.
+// newRealtimeTranslator creates an OpenAI Realtime API based translator (WebRTC).
 func newRealtimeTranslator(cfg FactoryConfig) (types.LiveTranslator, error) {
 	if cfg.APIKey == "" {
 		return nil, fmt.Errorf("API key required for realtime mode")
@@ -57,14 +53,6 @@ func newRealtimeTranslator(cfg FactoryConfig) (types.LiveTranslator, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create realtime service: %w", err)
-	}
-
-	// Set up event handlers if provided
-	if cfg.OnTranscript != nil {
-		srv.OnTranscript(cfg.OnTranscript)
-	}
-	if cfg.OnError != nil {
-		srv.OnError(cfg.OnError)
 	}
 
 	return srv, nil
@@ -87,14 +75,6 @@ func newLocalTranslator(cfg FactoryConfig) (types.LiveTranslator, error) {
 	srv, err := NewService(localCfg)
 	if err != nil {
 		return nil, fmt.Errorf("create local service: %w", err)
-	}
-
-	// Set up event handlers if provided
-	if cfg.OnTranscript != nil {
-		srv.OnTranscript(cfg.OnTranscript)
-	}
-	if cfg.OnError != nil {
-		srv.OnError(cfg.OnError)
 	}
 
 	return srv, nil

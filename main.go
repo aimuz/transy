@@ -178,23 +178,44 @@ func (a *App) StartLiveTranslation(sourceLang, targetLang string) error {
 	}
 	a.liveService = translator
 
-	return a.liveService.Start(context.Background(), sourceLang, targetLang)
+	if err := a.liveService.Start(context.Background(), sourceLang, targetLang); err != nil {
+		return err
+	}
+
+	// Start goroutines to forward transcripts and errors to frontend
+	go a.forwardTranscripts()
+	go a.forwardErrors()
+
+	return nil
+}
+
+// forwardTranscripts forwards transcript events from the service to the frontend.
+func (a *App) forwardTranscripts() {
+	if a.liveService == nil {
+		return
+	}
+	for transcript := range a.liveService.Transcripts() {
+		if a.app != nil {
+			a.app.Event.Emit("live-transcript", transcript)
+		}
+	}
+}
+
+// forwardErrors forwards errors from the service to the log.
+func (a *App) forwardErrors() {
+	if a.liveService == nil {
+		return
+	}
+	for err := range a.liveService.Errors() {
+		slog.Error("live translation error", "error", err)
+	}
 }
 
 // buildTranslatorConfig builds factory configuration from app settings.
 func (a *App) buildTranslatorConfig() livetranslate.FactoryConfig {
 	speechCfg := a.cfg.GetSpeechConfig()
 
-	cfg := livetranslate.FactoryConfig{
-		OnTranscript: func(t types.LiveTranscript) {
-			if a.app != nil {
-				a.app.Event.Emit("live-transcript", t)
-			}
-		},
-		OnError: func(err error) {
-			slog.Error("translation error", "error", err)
-		},
-	}
+	cfg := livetranslate.FactoryConfig{}
 
 	if speechCfg == nil {
 		cfg.Mode = "transcription"
@@ -771,6 +792,7 @@ func truncate(s string, n int) string {
 // ─────────────────────────────────────────────────────────────────────────────
 
 func main() {
+	slog.SetLogLoggerLevel(slog.LevelDebug)
 	slog.Info("starting app", "version", version, "commit", commit, "date", date)
 	appService := NewApp()
 

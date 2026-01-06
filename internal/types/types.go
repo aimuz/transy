@@ -93,14 +93,22 @@ type TranslateResult struct {
 // Live Translation Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-// LiveTranscript represents a real-time transcription result.
+// LiveTranscript represents a real-time transcription result with bilingual support.
 type LiveTranscript struct {
 	ID         string  `json:"id"`         // Unique identifier
-	Text       string  `json:"text"`       // Original text
-	Translated string  `json:"translated"` // Translated text
-	Timestamp  int64   `json:"timestamp"`  // Unix timestamp in milliseconds
+	SourceText string  `json:"sourceText"` // Original transcribed text
+	TargetText string  `json:"targetText"` // Translated text (may be empty if pending)
+	SourceLang string  `json:"sourceLang"` // Source language code
+	TargetLang string  `json:"targetLang"` // Target language code
+	StartTime  int64   `json:"startTime"`  // Segment start time (ms since session start)
+	EndTime    int64   `json:"endTime"`    // Segment end time (ms since session start, 0 if ongoing)
+	Timestamp  int64   `json:"timestamp"`  // Unix timestamp in milliseconds (creation time)
 	IsFinal    bool    `json:"isFinal"`    // Whether this is the final result
 	Confidence float64 `json:"confidence"` // Recognition confidence 0-1
+
+	// Backward compatibility - deprecated, use SourceText/TargetText instead
+	Text       string `json:"text,omitempty"`       // Deprecated: use SourceText
+	Translated string `json:"translated,omitempty"` // Deprecated: use TargetText
 }
 
 // LiveStatus represents the status of live translation.
