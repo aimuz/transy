@@ -19,11 +19,31 @@ import * as application$0 from "../../github.com/wailsapp/wails/v3/pkg/applicati
 import * as types$0 from "./internal/types/models.js";
 
 /**
+ * AddCredential adds a new API credential.
+ * @param {types$0.APICredential} cred
+ * @returns {$CancellablePromise<void>}
+ */
+export function AddCredential(cred) {
+    return $Call.ByID(1803223789, cred);
+}
+
+/**
+ * AddProvider adds a legacy provider by creating credential + profile.
+ * Deprecated: Use AddCredential + AddTranslationProfile instead.
  * @param {types$0.Provider} p
  * @returns {$CancellablePromise<void>}
  */
 export function AddProvider(p) {
     return $Call.ByID(2250278137, p);
+}
+
+/**
+ * AddTranslationProfile adds a new translation profile.
+ * @param {types$0.TranslationProfile} profile
+ * @returns {$CancellablePromise<void>}
+ */
+export function AddTranslationProfile(profile) {
+    return $Call.ByID(1708036840, profile);
 }
 
 /**
@@ -44,6 +64,7 @@ export function GetAccessibilityPermission() {
 }
 
 /**
+ * GetActiveProvider returns the active provider in legacy format.
  * @returns {$CancellablePromise<types$0.Provider | null>}
  */
 export function GetActiveProvider() {
@@ -53,11 +74,31 @@ export function GetActiveProvider() {
 }
 
 /**
+ * GetActiveTranslationProfile returns the currently active translation profile.
+ * @returns {$CancellablePromise<types$0.TranslationProfile | null>}
+ */
+export function GetActiveTranslationProfile() {
+    return $Call.ByID(3562388597).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType4($result);
+    }));
+}
+
+/**
+ * GetCredentials returns all API credentials.
+ * @returns {$CancellablePromise<types$0.APICredential[]>}
+ */
+export function GetCredentials() {
+    return $Call.ByID(1505250063).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType6($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<{ [_: string]: string }>}
  */
 export function GetDefaultLanguages() {
     return $Call.ByID(2348464387).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType3($result);
+        return $$createType7($result);
     }));
 }
 
@@ -67,16 +108,18 @@ export function GetDefaultLanguages() {
  */
 export function GetLiveStatus() {
     return $Call.ByID(1415338303).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType4($result);
+        return $$createType8($result);
     }));
 }
 
 /**
+ * GetProviders returns legacy Provider list for backward compatibility.
+ * Deprecated: Use GetTranslationProfiles instead.
  * @returns {$CancellablePromise<types$0.Provider[]>}
  */
 export function GetProviders() {
     return $Call.ByID(2525123639).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType5($result);
+        return $$createType9($result);
     }));
 }
 
@@ -86,7 +129,7 @@ export function GetProviders() {
  */
 export function GetSTTProviders() {
     return $Call.ByID(4069245102).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType7($result);
+        return $$createType11($result);
     }));
 }
 
@@ -107,6 +150,26 @@ export function GetScreenRecordingPermission() {
 }
 
 /**
+ * GetSpeechConfig returns the speech service configuration.
+ * @returns {$CancellablePromise<types$0.SpeechConfig | null>}
+ */
+export function GetSpeechConfig() {
+    return $Call.ByID(1620432715).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType13($result);
+    }));
+}
+
+/**
+ * GetTranslationProfiles returns all translation profiles.
+ * @returns {$CancellablePromise<types$0.TranslationProfile[]>}
+ */
+export function GetTranslationProfiles() {
+    return $Call.ByID(1590109544).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType14($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<string>}
  */
 export function GetVersion() {
@@ -124,11 +187,31 @@ export function Init(app, window) {
 }
 
 /**
+ * RemoveCredential removes a credential by ID.
+ * @param {string} id
+ * @returns {$CancellablePromise<void>}
+ */
+export function RemoveCredential(id) {
+    return $Call.ByID(1745722712, id);
+}
+
+/**
+ * RemoveProvider removes a legacy provider.
+ * Deprecated: Use RemoveTranslationProfile instead.
  * @param {string} name
  * @returns {$CancellablePromise<void>}
  */
 export function RemoveProvider(name) {
     return $Call.ByID(3305555996, name);
+}
+
+/**
+ * RemoveTranslationProfile removes a translation profile by ID.
+ * @param {string} id
+ * @returns {$CancellablePromise<void>}
+ */
+export function RemoveTranslationProfile(id) {
+    return $Call.ByID(2228403001, id);
 }
 
 /**
@@ -148,6 +231,8 @@ export function SetDefaultLanguage(src, dst) {
 }
 
 /**
+ * SetProviderActive sets a legacy provider as active.
+ * Deprecated: Use SetTranslationProfileActive instead.
  * @param {string} name
  * @returns {$CancellablePromise<void>}
  */
@@ -162,6 +247,24 @@ export function SetProviderActive(name) {
  */
 export function SetSTTProvider(name) {
     return $Call.ByID(485975085, name);
+}
+
+/**
+ * SetSpeechConfig sets the speech service configuration.
+ * @param {types$0.SpeechConfig} cfg
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetSpeechConfig(cfg) {
+    return $Call.ByID(2863537943, cfg);
+}
+
+/**
+ * SetTranslationProfileActive sets a translation profile as active.
+ * @param {string} id
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetTranslationProfileActive(id) {
+    return $Call.ByID(3105372105, id);
 }
 
 /**
@@ -183,6 +286,7 @@ export function Shutdown() {
 
 /**
  * StartLiveTranslation starts real-time audio translation.
+ * Uses factory pattern - main.go doesn't need to know implementation details.
  * @param {string} sourceLang
  * @param {string} targetLang
  * @returns {$CancellablePromise<void>}
@@ -221,11 +325,23 @@ export function ToggleWindowVisibility() {
  */
 export function TranslateWithLLM(req) {
     return $Call.ByID(2352175956, req).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType8($result);
+        return $$createType15($result);
     }));
 }
 
 /**
+ * UpdateCredential updates an existing credential.
+ * @param {string} id
+ * @param {types$0.APICredential} cred
+ * @returns {$CancellablePromise<void>}
+ */
+export function UpdateCredential(id, cred) {
+    return $Call.ByID(2832677181, id, cred);
+}
+
+/**
+ * UpdateProvider updates a legacy provider.
+ * Deprecated: Use UpdateTranslationProfile instead.
  * @param {string} name
  * @param {types$0.Provider} p
  * @returns {$CancellablePromise<void>}
@@ -234,13 +350,30 @@ export function UpdateProvider(name, p) {
     return $Call.ByID(995769993, name, p);
 }
 
+/**
+ * UpdateTranslationProfile updates an existing translation profile.
+ * @param {string} id
+ * @param {types$0.TranslationProfile} profile
+ * @returns {$CancellablePromise<void>}
+ */
+export function UpdateTranslationProfile(id, profile) {
+    return $Call.ByID(2126047032, id, profile);
+}
+
 // Private type creation functions
 const $$createType0 = types$0.DetectResult.createFrom;
 const $$createType1 = types$0.Provider.createFrom;
 const $$createType2 = $Create.Nullable($$createType1);
-const $$createType3 = $Create.Map($Create.Any, $Create.Any);
-const $$createType4 = types$0.LiveStatus.createFrom;
-const $$createType5 = $Create.Array($$createType1);
-const $$createType6 = types$0.STTProviderInfo.createFrom;
-const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = types$0.TranslateResult.createFrom;
+const $$createType3 = types$0.TranslationProfile.createFrom;
+const $$createType4 = $Create.Nullable($$createType3);
+const $$createType5 = types$0.APICredential.createFrom;
+const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = $Create.Map($Create.Any, $Create.Any);
+const $$createType8 = types$0.LiveStatus.createFrom;
+const $$createType9 = $Create.Array($$createType1);
+const $$createType10 = types$0.STTProviderInfo.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = types$0.SpeechConfig.createFrom;
+const $$createType13 = $Create.Nullable($$createType12);
+const $$createType14 = $Create.Array($$createType3);
+const $$createType15 = types$0.TranslateResult.createFrom;

@@ -6,10 +6,12 @@ replace github.com/pemistahl/lingua-go => github.com/aimuz/lingua-go v0.0.0-2025
 
 require (
 	github.com/dgraph-io/badger/v4 v4.9.0
+	github.com/google/uuid v1.6.0
 	github.com/pemistahl/lingua-go v1.4.0
 	github.com/robotn/gohook v0.42.3
 	github.com/wailsapp/wails/v3 v3.0.0-alpha.56
 	golang.org/x/text v0.32.0
+	nhooyr.io/websocket v1.8.17
 )
 
 require (
@@ -35,7 +37,6 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect

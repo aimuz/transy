@@ -1,7 +1,10 @@
 // Package types provides shared type definitions for the application.
 package types
 
+import "context"
+
 // Provider represents an LLM provider configuration.
+// Deprecated: Use APICredential + TranslationProfile instead.
 type Provider struct {
 	Name            string  `json:"name"`
 	Type            string  `json:"type"` // "openai", "openai-compatible", "gemini", "claude"
@@ -13,6 +16,42 @@ type Provider struct {
 	Temperature     float64 `json:"temperature,omitempty"`
 	Active          bool    `json:"active"`
 	DisableThinking bool    `json:"disable_thinking,omitempty"` // For Gemini: set thinkingBudget to 0
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// New Configuration Architecture
+// ─────────────────────────────────────────────────────────────────────────────
+
+// APICredential represents a reusable API credential.
+// One credential can be used by multiple translation profiles or speech services.
+type APICredential struct {
+	ID      string `json:"id"`                 // UUID for reference
+	Name    string `json:"name"`               // Display name, e.g., "My OpenAI"
+	Type    string `json:"type"`               // "openai", "openai-compatible", "gemini", "claude"
+	BaseURL string `json:"base_url,omitempty"` // Custom endpoint (required for openai-compatible)
+	APIKey  string `json:"api_key"`
+}
+
+// TranslationProfile represents a translation configuration bound to an API credential.
+type TranslationProfile struct {
+	ID              string  `json:"id"`            // UUID
+	Name            string  `json:"name"`          // Display name
+	CredentialID    string  `json:"credential_id"` // Reference to APICredential.ID
+	Model           string  `json:"model"`         // Model to use
+	SystemPrompt    string  `json:"system_prompt,omitempty"`
+	MaxTokens       int     `json:"max_tokens,omitempty"`
+	Temperature     float64 `json:"temperature,omitempty"`
+	Active          bool    `json:"active"` // Currently active profile
+	DisableThinking bool    `json:"disable_thinking,omitempty"`
+}
+
+// SpeechConfig represents speech service configuration (STT, speech translation, etc).
+// Requires an OpenAI-compatible API credential.
+type SpeechConfig struct {
+	Enabled      bool   `json:"enabled"`       // Whether speech API is enabled
+	CredentialID string `json:"credential_id"` // Reference to APICredential.ID
+	Model        string `json:"model"`         // e.g., "whisper-1" or "gpt-4o-realtime-preview"
+	Mode         string `json:"mode"`          // "transcription" (default) or "realtime"
 }
 
 // DefaultMaxTokens is the default max tokens if not specified.
@@ -82,4 +121,27 @@ type STTProviderInfo struct {
 	RequiresSetup bool   `json:"requiresSetup"` // Whether setup is needed (e.g., model download)
 	SetupProgress int    `json:"setupProgress"` // Setup progress 0-100, -1 if not started
 	IsReady       bool   `json:"isReady"`       // Whether the provider is ready to use
+}
+
+// LiveTranslator provides real-time speech translation with a unified interface.
+// This interface abstracts both local (VAD+STT+Translation) and API-based (e.g., OpenAI Realtime)
+// implementations, making them interchangeable.
+type LiveTranslator interface {
+	// Start begins live translation.
+	// ctx allows cancellation and deadline control.
+	Start(ctx context.Context, sourceLang, targetLang string) error
+
+	// Stop stops the live translation service.
+	Stop() error
+
+	// Transcripts returns a read-only channel for receiving transcripts.
+	// The channel is closed when the service stops.
+	Transcripts() <-chan LiveTranscript
+
+	// Errors returns a read-only channel for receiving errors.
+	// The channel is closed when the service stops.
+	Errors() <-chan error
+
+	// Status returns the current status of the translation service.
+	Status() LiveStatus
 }

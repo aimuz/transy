@@ -96,3 +96,34 @@ export type STTProviderInfo = {
   setupProgress: number
   isReady: boolean
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// New Configuration Architecture
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type APICredential = {
+  id: string
+  name: string
+  type: 'openai' | 'openai-compatible' | 'gemini' | 'claude'
+  base_url?: string
+  api_key: string
+}
+
+export type TranslationProfile = {
+  id: string
+  name: string
+  credential_id: string
+  model: string
+  system_prompt?: string
+  max_tokens?: number
+  temperature?: number
+  active: boolean
+  disable_thinking?: boolean
+}
+
+export type SpeechConfig = {
+  enabled: boolean
+  credential_id?: string
+  model?: string
+  mode?: 'transcription' | 'realtime'
+}

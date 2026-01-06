@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"log/slog"
@@ -41,7 +42,7 @@ type App struct {
 	cache  *cache.Cache
 
 	// Live translation
-	liveService *livetranslate.Service
+	liveService types.LiveTranslator
 	sttRegistry *stt.Registry
 }
 
@@ -80,7 +81,7 @@ func (a *App) Shutdown() {
 		a.hotkey.Stop()
 	}
 	if a.liveService != nil {
-		a.liveService.Close()
+		a.liveService.Stop()
 	}
 	if a.sttRegistry != nil {
 		a.sttRegistry.Close()
@@ -113,25 +114,35 @@ func (a *App) setupSTT() {
 	a.sttRegistry = stt.NewRegistry()
 
 	// Register macOS Speech provider first (lowest latency, on-device)
+	// Note: We don't call any cgo/Speech Framework functions here to avoid
+	// crashes during AppKit initialization. Authorization will be checked
+	// lazily when the provider is actually used.
 	speechProvider, err := stt.NewSpeechDarwin()
 	if err != nil {
 		slog.Error("init macOS Speech provider", "error", err)
-	} else if speechProvider.IsReady() {
-		a.sttRegistry.Register(speechProvider)
-		slog.Info("registered macOS Speech provider (low latency)")
 	} else {
-		slog.Warn("macOS Speech provider not authorized - will prompt on first use")
-		a.sttRegistry.Register(speechProvider) // Still register, will prompt for auth
+		speechProvider.MarkAppStarted() // Allow cgo calls, but don't make any yet
+		a.sttRegistry.Register(speechProvider)
+		slog.Info("registered macOS Speech provider (authorization checked on first use)")
 	}
 
-	// Register API provider if configured
-	activeProvider := a.cfg.GetActiveProvider()
-	if activeProvider != nil && activeProvider.APIKey != "" {
-		apiProvider := stt.NewWhisperAPI(stt.WhisperAPIConfig{
-			APIKey: activeProvider.APIKey,
-		})
-		a.sttRegistry.Register(apiProvider)
-		slog.Info("registered OpenAI Whisper API provider")
+	// Register API provider if configured via SpeechConfig
+	speechCfg := a.cfg.GetSpeechConfig()
+	if speechCfg != nil && speechCfg.Enabled && speechCfg.CredentialID != "" {
+		cred := a.cfg.GetCredential(speechCfg.CredentialID)
+		if cred != nil {
+			model := speechCfg.Model
+			if model == "" {
+				model = "whisper-1"
+			}
+			apiProvider := stt.NewWhisperAPI(stt.WhisperAPIConfig{
+				APIKey:  cred.APIKey,
+				BaseURL: cred.BaseURL,
+				Model:   model,
+			})
+			a.sttRegistry.Register(apiProvider)
+			slog.Info("registered OpenAI Whisper API provider", "credential", cred.Name)
+		}
 	}
 
 	// Register local whisper provider (may not be ready if whisper.cpp not installed)
@@ -157,56 +168,87 @@ func (a *App) setupSTT() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // StartLiveTranslation starts real-time audio translation.
+// Uses factory pattern - main.go doesn't need to know implementation details.
 func (a *App) StartLiveTranslation(sourceLang, targetLang string) error {
-	if a.liveService == nil {
-		// Create service with default STT provider
-		provider := a.sttRegistry.Get("whisper-local")
-		if provider == nil {
-			providers := a.sttRegistry.List()
-			if len(providers) > 0 {
-				provider = providers[0]
-			}
-		}
+	cfg := a.buildTranslatorConfig()
 
-		if provider == nil {
-			return fmt.Errorf("no STT provider available")
-		}
+	translator, err := livetranslate.NewOrReuse(a.liveService, cfg)
+	if err != nil {
+		return err
+	}
+	a.liveService = translator
 
-		cfg := livetranslate.DefaultConfig()
-		cfg.STTProvider = provider
-		cfg.TranslateFunc = func(text, context, srcLang, dstLang string) (string, error) {
-			result, err := a.TranslateWithLLM(types.TranslateRequest{
-				Text:       text,
-				SourceLang: srcLang,
-				TargetLang: dstLang,
-				Context:    context,
-			})
-			if err != nil {
-				return "", err
-			}
-			return result.Text, nil
-		}
+	return a.liveService.Start(context.Background(), sourceLang, targetLang)
+}
 
-		service, err := livetranslate.NewService(cfg)
-		if err != nil {
-			return fmt.Errorf("create live service: %w", err)
-		}
+// buildTranslatorConfig builds factory configuration from app settings.
+func (a *App) buildTranslatorConfig() livetranslate.FactoryConfig {
+	speechCfg := a.cfg.GetSpeechConfig()
 
-		// Set transcript callback to emit events
-		service.OnTranscript(func(t types.LiveTranscript) {
+	cfg := livetranslate.FactoryConfig{
+		OnTranscript: func(t types.LiveTranscript) {
 			if a.app != nil {
 				a.app.Event.Emit("live-transcript", t)
 			}
-		})
-
-		service.OnError(func(err error) {
-			slog.Error("live translation error", "error", err)
-		})
-
-		a.liveService = service
+		},
+		OnError: func(err error) {
+			slog.Error("translation error", "error", err)
+		},
 	}
 
-	return a.liveService.Start(sourceLang, targetLang)
+	if speechCfg == nil {
+		cfg.Mode = "transcription"
+		cfg.STTProvider = a.findSTTProvider()
+		cfg.TranslateFunc = a.translateFunc
+		return cfg
+	}
+
+	cfg.Mode = speechCfg.Mode
+
+	if cfg.Mode == "realtime" {
+		if cred := a.cfg.GetCredential(speechCfg.CredentialID); cred != nil {
+			cfg.APIKey = cred.APIKey
+		}
+		cfg.Model = speechCfg.Model
+		cfg.SystemPrompt = "You are a professional translator. Translate the input audio text into the target language directly. Output only the translated text."
+		cfg.Temperature = 0.6
+	} else {
+		cfg.STTProvider = a.findSTTProvider()
+		cfg.TranslateFunc = a.translateFunc
+	}
+
+	return cfg
+}
+
+// translateFunc translates text using the configured LLM.
+func (a *App) translateFunc(text, ctx, srcLang, dstLang string) (string, error) {
+	result, err := a.TranslateWithLLM(types.TranslateRequest{
+		Text:       text,
+		SourceLang: srcLang,
+		TargetLang: dstLang,
+		Context:    ctx,
+	})
+	if err != nil {
+		return "", err
+	}
+	return result.Text, nil
+}
+
+// findSTTProvider finds an available STT provider.
+func (a *App) findSTTProvider() stt.Provider {
+	if a.cfg.STTProvider != "" {
+		if p := a.sttRegistry.Get(a.cfg.STTProvider); p != nil {
+			return p
+		}
+	}
+	if p := a.sttRegistry.Get("whisper-local"); p != nil {
+		return p
+	}
+	providers := a.sttRegistry.List()
+	if len(providers) > 0 {
+		return providers[0]
+	}
+	return nil
 }
 
 // StopLiveTranslation stops real-time audio translation.
@@ -257,8 +299,16 @@ func (a *App) SetSTTProvider(name string) error {
 		return fmt.Errorf("provider not found: %s", name)
 	}
 
+	// Save preference
+	a.cfg.STTProvider = name
+	if err := a.cfg.Save(); err != nil {
+		slog.Error("save config", "error", err)
+	}
+
 	if a.liveService != nil {
-		a.liveService.SetSTTProvider(provider)
+		if srv, ok := a.liveService.(*livetranslate.Service); ok {
+			srv.SetSTTProvider(provider)
+		}
 	}
 	return nil
 }
@@ -436,31 +486,142 @@ func (a *App) GetVersion() string {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Provider Management (Delegated to Config)
+// Provider Management (Legacy - for backward compatibility)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// GetProviders returns legacy Provider list for backward compatibility.
+// Deprecated: Use GetTranslationProfiles instead.
 func (a *App) GetProviders() []types.Provider {
-	return a.cfg.Providers
+	// Build legacy providers from new format
+	var providers []types.Provider
+	for _, profile := range a.cfg.GetTranslationProfiles() {
+		cred := a.cfg.GetCredential(profile.CredentialID)
+		if cred == nil {
+			continue
+		}
+		providers = append(providers, types.Provider{
+			Name:            profile.Name,
+			Type:            cred.Type,
+			BaseURL:         cred.BaseURL,
+			APIKey:          cred.APIKey,
+			Model:           profile.Model,
+			SystemPrompt:    profile.SystemPrompt,
+			MaxTokens:       profile.MaxTokens,
+			Temperature:     profile.Temperature,
+			Active:          profile.Active,
+			DisableThinking: profile.DisableThinking,
+		})
+	}
+	return providers
 }
 
+// AddProvider adds a legacy provider by creating credential + profile.
+// Deprecated: Use AddCredential + AddTranslationProfile instead.
 func (a *App) AddProvider(p types.Provider) error {
 	return a.cfg.AddProvider(p)
 }
 
+// UpdateProvider updates a legacy provider.
+// Deprecated: Use UpdateTranslationProfile instead.
 func (a *App) UpdateProvider(name string, p types.Provider) error {
 	return a.cfg.UpdateProvider(name, p)
 }
 
+// RemoveProvider removes a legacy provider.
+// Deprecated: Use RemoveTranslationProfile instead.
 func (a *App) RemoveProvider(name string) error {
 	return a.cfg.RemoveProvider(name)
 }
 
+// SetProviderActive sets a legacy provider as active.
+// Deprecated: Use SetTranslationProfileActive instead.
 func (a *App) SetProviderActive(name string) error {
 	return a.cfg.SetProviderActive(name)
 }
 
+// GetActiveProvider returns the active provider in legacy format.
 func (a *App) GetActiveProvider() *types.Provider {
-	return a.cfg.GetActiveProvider()
+	return a.cfg.GetActiveProviderCompat()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API Credential Management (New Architecture)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GetCredentials returns all API credentials.
+func (a *App) GetCredentials() []types.APICredential {
+	return a.cfg.GetCredentials()
+}
+
+// AddCredential adds a new API credential.
+func (a *App) AddCredential(cred types.APICredential) error {
+	return a.cfg.AddCredential(cred)
+}
+
+// UpdateCredential updates an existing credential.
+func (a *App) UpdateCredential(id string, cred types.APICredential) error {
+	return a.cfg.UpdateCredential(id, cred)
+}
+
+// RemoveCredential removes a credential by ID.
+func (a *App) RemoveCredential(id string) error {
+	return a.cfg.RemoveCredential(id)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Translation Profile Management (New Architecture)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GetTranslationProfiles returns all translation profiles.
+func (a *App) GetTranslationProfiles() []types.TranslationProfile {
+	return a.cfg.GetTranslationProfiles()
+}
+
+// GetActiveTranslationProfile returns the currently active translation profile.
+func (a *App) GetActiveTranslationProfile() *types.TranslationProfile {
+	return a.cfg.GetActiveTranslationProfile()
+}
+
+// AddTranslationProfile adds a new translation profile.
+func (a *App) AddTranslationProfile(profile types.TranslationProfile) error {
+	return a.cfg.AddTranslationProfile(profile)
+}
+
+// UpdateTranslationProfile updates an existing translation profile.
+func (a *App) UpdateTranslationProfile(id string, profile types.TranslationProfile) error {
+	return a.cfg.UpdateTranslationProfile(id, profile)
+}
+
+// RemoveTranslationProfile removes a translation profile by ID.
+func (a *App) RemoveTranslationProfile(id string) error {
+	return a.cfg.RemoveTranslationProfile(id)
+}
+
+// SetTranslationProfileActive sets a translation profile as active.
+func (a *App) SetTranslationProfileActive(id string) error {
+	return a.cfg.SetTranslationProfileActive(id)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Speech Configuration (New Architecture)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GetSpeechConfig returns the speech service configuration.
+func (a *App) GetSpeechConfig() *types.SpeechConfig {
+	return a.cfg.GetSpeechConfig()
+}
+
+// SetSpeechConfig sets the speech service configuration.
+func (a *App) SetSpeechConfig(cfg types.SpeechConfig) error {
+	if err := a.cfg.SetSpeechConfig(cfg); err != nil {
+		return err
+	}
+	// Reinitialize STT registry with new config
+	if a.sttRegistry != nil {
+		a.sttRegistry.Close()
+	}
+	a.setupSTT()
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

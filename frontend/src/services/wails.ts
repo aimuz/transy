@@ -101,3 +101,62 @@ export async function setupSTTProvider(name: string): Promise<void> {
 export async function getSTTSetupProgress(name: string): Promise<number> {
   return await App.GetSTTSetupProgress(name)
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// New Configuration Architecture
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type { APICredential, TranslationProfile, SpeechConfig } from '../types'
+
+// API Credentials
+export async function getCredentials(): Promise<APICredential[]> {
+  const credentials = await App.GetCredentials()
+  return (credentials || []) as APICredential[]
+}
+
+export async function addCredential(credential: APICredential): Promise<void> {
+  await App.AddCredential(credential)
+}
+
+export async function updateCredential(id: string, credential: APICredential): Promise<void> {
+  await App.UpdateCredential(id, credential)
+}
+
+export async function removeCredential(id: string): Promise<void> {
+  await App.RemoveCredential(id)
+}
+
+// Translation Profiles
+export async function getTranslationProfiles(): Promise<TranslationProfile[]> {
+  const profiles = await App.GetTranslationProfiles()
+  return (profiles || []) as TranslationProfile[]
+}
+
+export async function getActiveTranslationProfile(): Promise<TranslationProfile | null> {
+  return (await App.GetActiveTranslationProfile()) as TranslationProfile | null
+}
+
+export async function addTranslationProfile(profile: TranslationProfile): Promise<void> {
+  await App.AddTranslationProfile(profile)
+}
+
+export async function updateTranslationProfile(id: string, profile: TranslationProfile): Promise<void> {
+  await App.UpdateTranslationProfile(id, profile)
+}
+
+export async function removeTranslationProfile(id: string): Promise<void> {
+  await App.RemoveTranslationProfile(id)
+}
+
+export async function setTranslationProfileActive(id: string): Promise<void> {
+  await App.SetTranslationProfileActive(id)
+}
+
+// Speech Config
+export async function getSpeechConfig(): Promise<SpeechConfig | null> {
+  return (await App.GetSpeechConfig()) as SpeechConfig | null
+}
+
+export async function setSpeechConfig(config: SpeechConfig): Promise<void> {
+  await App.SetSpeechConfig(config)
+}

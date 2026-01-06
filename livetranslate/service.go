@@ -2,9 +2,9 @@
 package livetranslate
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
-	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -60,9 +60,15 @@ type Service struct {
 	recentTexts []string
 	maxContext  int // Maximum number of recent texts to keep
 
-	// Callbacks
+	// Callbacks (deprecated, use channels)
 	onTranscript func(types.LiveTranscript)
 	onError      func(error)
+
+	// Channels for LiveTranslator interface
+	transcriptChan chan types.LiveTranscript
+	errorChan      chan error
+	ctx            context.Context
+	cancel         context.CancelFunc
 }
 
 // Config holds configuration for the live translation service.
@@ -121,6 +127,9 @@ func NewService(cfg Config) (*Service, error) {
 		silenceDur:      cfg.SilenceDur,
 		transcribeDelay: cfg.TranscribeDelay,
 		audioBuffer:     make([]float32, 0, 16000*30), // 30 seconds buffer
+		// Initialize channels
+		transcriptChan: make(chan types.LiveTranscript, 10), // Buffered to avoid blocking
+		errorChan:      make(chan error, 10),
 	}
 
 	// Register audio callback
@@ -147,7 +156,8 @@ func (s *Service) SetTranslateFunc(f TranslateFunc) {
 }
 
 // Start begins live translation.
-func (s *Service) Start(sourceLang, targetLang string) error {
+// Implements LiveTranslator interface.
+func (s *Service) Start(ctx context.Context, sourceLang, targetLang string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -163,18 +173,18 @@ func (s *Service) Start(sourceLang, targetLang string) error {
 		return fmt.Errorf("STT provider not ready")
 	}
 
+	// Create cancellable context
+	s.ctx, s.cancel = context.WithCancel(ctx)
+
 	s.sourceLang = sourceLang
 	s.targetLang = targetLang
 	s.startTime = time.Now()
-	s.transcriptCount = 0
-	s.audioBuffer = s.audioBuffer[:0]
 	s.transcriptCount = 0
 	s.audioBuffer = s.audioBuffer[:0]
 	s.recentTexts = s.recentTexts[:0] // Clear context
 	s.lastTranscriptID = ""
 	s.lastTranscriptText = ""
 	s.lastTranscriptEnd = time.Time{}
-	s.inSpeech = false
 	s.inSpeech = false
 
 	if err := s.audio.Start(); err != nil {
@@ -183,10 +193,12 @@ func (s *Service) Start(sourceLang, targetLang string) error {
 
 	s.running = true
 	slog.Info("live translation started", "source", sourceLang, "target", targetLang)
+
 	return nil
 }
 
 // Stop stops live translation.
+// Implements LiveTranslator interface.
 func (s *Service) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -197,15 +209,18 @@ func (s *Service) Stop() error {
 
 	s.running = false
 
-	if err := s.audio.Stop(); err != nil {
-		return fmt.Errorf("stop audio capture: %w", err)
+	// Cancel context
+	if s.cancel != nil {
+		s.cancel()
 	}
 
-	// Process any remaining audio
-	if len(s.audioBuffer) > 0 {
-		go s.transcribeAndTranslate(s.audioBuffer, true)
-		s.audioBuffer = s.audioBuffer[:0]
+	if err := s.audio.Stop(); err != nil {
+		slog.Error("stop audio capture", "error", err)
 	}
+
+	// Close channels
+	close(s.transcriptChan)
+	close(s.errorChan)
 
 	slog.Info("live translation stopped", "duration", time.Since(s.startTime))
 	return nil
@@ -237,10 +252,22 @@ func (s *Service) Status() types.LiveStatus {
 		Active:          s.running,
 		SourceLang:      s.sourceLang,
 		TargetLang:      s.targetLang,
-		Duration:        duration,
 		STTProvider:     providerName,
+		Duration:        duration,
 		TranscriptCount: s.transcriptCount,
 	}
+}
+
+// Transcripts returns a read-only channel for receiving transcripts.
+// Implements LiveTranslator interface.
+func (s *Service) Transcripts() <-chan types.LiveTranscript {
+	return s.transcriptChan
+}
+
+// Errors returns a read-only channel for receiving errors.
+// Implements LiveTranslator interface.
+func (s *Service) Errors() <-chan error {
+	return s.errorChan
 }
 
 // OnTranscript sets the callback for new transcripts.
@@ -342,8 +369,11 @@ func (s *Service) transcribeAndTranslate(audio []float32, isFinal bool) {
 	translateFn := s.translate
 	sourceLang := s.sourceLang
 	targetLang := s.targetLang
+	// Support both callback and channel patterns
 	onTranscript := s.onTranscript
 	onError := s.onError
+	transcriptChan := s.transcriptChan
+	errorChan := s.errorChan
 	// Get recent context
 	contextTexts := make([]string, len(s.recentTexts))
 	copy(contextTexts, s.recentTexts)
@@ -357,8 +387,14 @@ func (s *Service) transcribeAndTranslate(audio []float32, isFinal bool) {
 	result, err := provider.Transcribe(audio, sourceLang)
 	if err != nil {
 		slog.Error("transcription failed", "error", err)
+		// Send to both callback and channel
 		if onError != nil {
 			onError(err)
+		}
+		select {
+		case errorChan <- err:
+		default:
+			// Channel full, skip
 		}
 		return
 	}
@@ -417,16 +453,23 @@ func (s *Service) transcribeAndTranslate(audio []float32, isFinal bool) {
 	s.mu.Unlock()
 
 	// Emit transcript immediately (pending translation)
+	transcript := types.LiveTranscript{
+		ID:         transcriptID,
+		Text:       fullText,
+		Translated: "", // Translation pending
+		Timestamp:  timestamp,
+		IsFinal:    false,
+		Confidence: result.Confidence,
+	}
+
+	// Send to both callback and channel
 	if onTranscript != nil {
-		transcript := types.LiveTranscript{
-			ID:         transcriptID,
-			Text:       fullText,
-			Translated: "", // Translation pending
-			Timestamp:  timestamp,
-			IsFinal:    false,
-			Confidence: result.Confidence,
-		}
 		onTranscript(transcript)
+	}
+	select {
+	case transcriptChan <- transcript:
+	default:
+		// Channel full, skip
 	}
 
 	// Translate asynchronously
@@ -434,8 +477,6 @@ func (s *Service) transcribeAndTranslate(audio []float32, isFinal bool) {
 		translated := fullText
 		if translateFn != nil && targetLang != "" && sourceLang != targetLang {
 			// Join context texts
-			// When merging, recentTexts already contains the fullText as the last element.
-			// Ideally context should be PREVIOUS sentences.
 			s.mu.RLock()
 			currentContext := make([]string, 0, len(s.recentTexts))
 			for _, t := range s.recentTexts {
@@ -454,39 +495,35 @@ func (s *Service) transcribeAndTranslate(audio []float32, isFinal bool) {
 				if onError != nil {
 					onError(tErr)
 				}
+				select {
+				case errorChan <- tErr:
+				default:
+				}
 				// Use original text if translation fails
 				translated = fullText
 			}
 		}
 
 		// Emit updated transcript with translation
-		if onTranscript != nil {
-			transcript := types.LiveTranscript{
-				ID:         transcriptID,
-				Text:       fullText,
-				Translated: translated,
-				Timestamp:  time.Now().UnixMilli(),
-				IsFinal:    isFinal,
-				Confidence: result.Confidence,
-			}
-			onTranscript(transcript)
-			slog.Debug("transcript updated (translated)", "id", transcriptID, "translated", translated)
+		finalTranscript := types.LiveTranscript{
+			ID:         transcriptID,
+			Text:       fullText,
+			Translated: translated,
+			Timestamp:  time.Now().UnixMilli(),
+			IsFinal:    isFinal,
+			Confidence: result.Confidence,
 		}
+
+		// Send to both callback and channel
+		if onTranscript != nil {
+			onTranscript(finalTranscript)
+		}
+		select {
+		case transcriptChan <- finalTranscript:
+		default:
+		}
+		slog.Debug("transcript updated (translated)", "id", transcriptID, "translated", translated)
 	}()
-}
-
-// calculateRMS calculates the root mean square of audio samples.
-func calculateRMS(samples []float32) float32 {
-	if len(samples) == 0 {
-		return 0
-	}
-
-	var sum float64
-	for _, s := range samples {
-		sum += float64(s * s)
-	}
-
-	return float32(math.Sqrt(sum / float64(len(samples))))
 }
 
 // Close releases resources.

@@ -7,6 +7,70 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * APICredential represents a reusable API credential.
+ * One credential can be used by multiple translation profiles or speech services.
+ */
+export class APICredential {
+    /**
+     * Creates a new APICredential instance.
+     * @param {Partial<APICredential>} [$$source = {}] - The source object to create the APICredential.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * UUID for reference
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            /**
+             * Display name, e.g., "My OpenAI"
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("type" in $$source)) {
+            /**
+             * "openai", "openai-compatible", "gemini", "claude"
+             * @member
+             * @type {string}
+             */
+            this["type"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * Custom endpoint (required for openai-compatible)
+             * @member
+             * @type {string | undefined}
+             */
+            this["base_url"] = undefined;
+        }
+        if (!("api_key" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["api_key"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new APICredential instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {APICredential}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new APICredential(/** @type {Partial<APICredential>} */($$parsedSource));
+    }
+}
+
+/**
  * DetectResult represents the result of language detection.
  */
 export class DetectResult {
@@ -122,6 +186,7 @@ export class LiveStatus {
 
 /**
  * Provider represents an LLM provider configuration.
+ * Deprecated: Use APICredential + TranslationProfile instead.
  */
 export class Provider {
     /**
@@ -289,6 +354,63 @@ export class STTProviderInfo {
 }
 
 /**
+ * SpeechConfig represents speech service configuration (STT, speech translation, etc).
+ * Requires an OpenAI-compatible API credential.
+ */
+export class SpeechConfig {
+    /**
+     * Creates a new SpeechConfig instance.
+     * @param {Partial<SpeechConfig>} [$$source = {}] - The source object to create the SpeechConfig.
+     */
+    constructor($$source = {}) {
+        if (!("enabled" in $$source)) {
+            /**
+             * Whether speech API is enabled
+             * @member
+             * @type {boolean}
+             */
+            this["enabled"] = false;
+        }
+        if (!("credential_id" in $$source)) {
+            /**
+             * Reference to APICredential.ID
+             * @member
+             * @type {string}
+             */
+            this["credential_id"] = "";
+        }
+        if (!("model" in $$source)) {
+            /**
+             * e.g., "whisper-1" or "gpt-4o-realtime-preview"
+             * @member
+             * @type {string}
+             */
+            this["model"] = "";
+        }
+        if (!("mode" in $$source)) {
+            /**
+             * "transcription" (default) or "realtime"
+             * @member
+             * @type {string}
+             */
+            this["mode"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SpeechConfig instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {SpeechConfig}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new SpeechConfig(/** @type {Partial<SpeechConfig>} */($$parsedSource));
+    }
+}
+
+/**
  * TranslateRequest represents a translation request from the frontend.
  */
 export class TranslateRequest {
@@ -380,6 +502,98 @@ export class TranslateResult {
             $$parsedSource["usage"] = $$createField1_0($$parsedSource["usage"]);
         }
         return new TranslateResult(/** @type {Partial<TranslateResult>} */($$parsedSource));
+    }
+}
+
+/**
+ * TranslationProfile represents a translation configuration bound to an API credential.
+ */
+export class TranslationProfile {
+    /**
+     * Creates a new TranslationProfile instance.
+     * @param {Partial<TranslationProfile>} [$$source = {}] - The source object to create the TranslationProfile.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * UUID
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            /**
+             * Display name
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("credential_id" in $$source)) {
+            /**
+             * Reference to APICredential.ID
+             * @member
+             * @type {string}
+             */
+            this["credential_id"] = "";
+        }
+        if (!("model" in $$source)) {
+            /**
+             * Model to use
+             * @member
+             * @type {string}
+             */
+            this["model"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["system_prompt"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | undefined}
+             */
+            this["max_tokens"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | undefined}
+             */
+            this["temperature"] = undefined;
+        }
+        if (!("active" in $$source)) {
+            /**
+             * Currently active profile
+             * @member
+             * @type {boolean}
+             */
+            this["active"] = false;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {boolean | undefined}
+             */
+            this["disable_thinking"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TranslationProfile instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {TranslationProfile}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new TranslationProfile(/** @type {Partial<TranslationProfile>} */($$parsedSource));
     }
 }
 

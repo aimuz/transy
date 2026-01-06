@@ -12,6 +12,7 @@ package stt
 extern char* recognizeSpeech(float* samples, int sampleCount, int sampleRate, const char* language);
 extern int isSpeechRecognitionAvailable(const char* language);
 extern int requestSpeechRecognitionAuthorization(void);
+extern int checkSpeechRecognitionAuthorizationStatus(void);
 */
 import "C"
 
@@ -25,8 +26,10 @@ import (
 // SpeechDarwin implements the Provider interface using macOS Speech Framework.
 // This provides low-latency on-device speech recognition.
 type SpeechDarwin struct {
-	mu    sync.RWMutex
-	ready bool
+	mu            sync.RWMutex
+	statusChecked bool
+	authorized    bool
+	appStarted    bool // Set to true after app initialization is complete
 }
 
 // NewSpeechDarwin creates a new macOS Speech provider.
@@ -41,18 +44,108 @@ func NewSpeechDarwin() (*SpeechDarwin, error) {
 func (s *SpeechDarwin) Name() string        { return "speech-darwin" }
 func (s *SpeechDarwin) DisplayName() string { return "macOS 语音识别 (低延迟)" }
 func (s *SpeechDarwin) IsLocal() bool       { return true }
-func (s *SpeechDarwin) RequiresSetup() bool { return false }
-func (s *SpeechDarwin) SetupProgress() int  { return 100 }
-
-func (s *SpeechDarwin) IsReady() bool {
-	// Always return true - actual authorization check happens in Transcribe.
-	// This avoids calling into Objective-C from the main thread during init.
+func (s *SpeechDarwin) RequiresSetup() bool {
+	// Speech recognition may require authorization but we can't check safely
+	// during startup. Return false and let Transcribe() handle authorization.
 	return true
 }
+func (s *SpeechDarwin) SetupProgress() int { return 100 }
 
-func (s *SpeechDarwin) Setup(_ func(percent int)) error {
-	// Authorization will be requested automatically when using speech recognition.
-	// We don't block here to avoid main thread deadlock.
+func (s *SpeechDarwin) IsReady() bool {
+	s.mu.RLock()
+	appStarted := s.appStarted
+	statusChecked := s.statusChecked
+	authorized := s.authorized
+	s.mu.RUnlock()
+
+	// Return cached result if already checked
+	if statusChecked {
+		return authorized
+	}
+
+	// Don't check during initial app startup - defer to later.
+	// This avoids cgo calls that can crash during AppKit initialization.
+	if !appStarted {
+		return false
+	}
+
+	// Do a quick non-blocking check
+	status := int(C.checkSpeechRecognitionAuthorizationStatus())
+	if status == 3 { // Authorized
+		s.mu.Lock()
+		s.statusChecked = true
+		s.authorized = true
+		s.mu.Unlock()
+		return true
+	}
+	if status == 1 || status == 2 { // Denied or Restricted
+		s.mu.Lock()
+		s.statusChecked = true
+		s.authorized = false
+		s.mu.Unlock()
+		return false
+	}
+	// Status is NotDetermined - don't trigger auth here to avoid crashes
+	// User should call Setup() or the provider will be marked as requiring setup
+	return false
+}
+
+// MarkAppStarted should be called after the app has fully initialized.
+// This enables IsReady() to perform actual status checks.
+func (s *SpeechDarwin) MarkAppStarted() {
+	s.mu.Lock()
+	s.appStarted = true
+	s.mu.Unlock()
+}
+
+// checkAndRequestAuth checks authorization status and triggers request if needed.
+// Returns true if authorized, false otherwise.
+func (s *SpeechDarwin) checkAndRequestAuth() bool {
+	s.mu.Lock()
+	if s.statusChecked {
+		auth := s.authorized
+		s.mu.Unlock()
+		return auth
+	}
+	s.mu.Unlock()
+
+	// 0: NotDetermined, 1: Denied, 2: Restricted, 3: Authorized
+	status := int(C.checkSpeechRecognitionAuthorizationStatus())
+	if status == 3 {
+		s.mu.Lock()
+		s.statusChecked = true
+		s.authorized = true
+		s.mu.Unlock()
+		return true
+	}
+
+	if status == 0 { // NotDetermined
+		// Trigger authorization request - this is async and may show a dialog
+		C.requestSpeechRecognitionAuthorization()
+		// Don't cache status yet - user hasn't made a choice
+		return false
+	}
+
+	// Denied or Restricted
+	s.mu.Lock()
+	s.statusChecked = true
+	s.authorized = false
+	s.mu.Unlock()
+	return false
+}
+
+func (s *SpeechDarwin) Setup(progress func(percent int)) error {
+	// Simply check if authorized - don't try to trigger system dialogs
+	// This avoids crashes from cgo/AppKit conflicts
+	if progress != nil {
+		progress(50)
+	}
+
+	s.checkAndRequestAuth()
+
+	if progress != nil {
+		progress(100)
+	}
 	return nil
 }
 
@@ -60,8 +153,9 @@ func (s *SpeechDarwin) Setup(_ func(percent int)) error {
 // audio: PCM float32 samples at 16000 Hz
 // language: source language code (e.g., "en", "zh", "ja")
 func (s *SpeechDarwin) Transcribe(audio []float32, language string) (*TranscribeResult, error) {
-	if !s.IsReady() {
-		return nil, fmt.Errorf("speech recognition not authorized")
+	// Check and request authorization at actual use time (not during startup)
+	if !s.checkAndRequestAuth() {
+		return nil, fmt.Errorf("speech recognition permission denied or not authorized")
 	}
 
 	if len(audio) == 0 {

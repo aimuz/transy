@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/google/uuid"
 	"go.aimuz.me/transy/internal/types"
 )
 
@@ -19,7 +20,16 @@ const (
 
 // Config represents the application configuration.
 type Config struct {
-	Providers        []types.Provider  `json:"providers"`
+	// Legacy fields (deprecated, kept for migration)
+	Providers   []types.Provider `json:"providers,omitempty"`
+	STTProvider string           `json:"stt_provider,omitempty"`
+
+	// New architecture
+	Credentials         []types.APICredential      `json:"credentials,omitempty"`
+	TranslationProfiles []types.TranslationProfile `json:"translation_profiles,omitempty"`
+	SpeechConfig        *types.SpeechConfig        `json:"speech_config,omitempty"`
+
+	// Shared settings
 	DefaultLanguages map[string]string `json:"default_languages"`
 }
 
@@ -52,6 +62,11 @@ func Load() (*Config, error) {
 	// Ensure default languages exist
 	if cfg.DefaultLanguages == nil {
 		cfg.DefaultLanguages = defaultLanguages()
+	}
+
+	// Migrate from legacy Provider format to new Credential + Profile format
+	if err := cfg.migrateToNewFormat(); err != nil {
+		return nil, fmt.Errorf("migrate to new format: %w", err)
 	}
 
 	return &cfg, nil
@@ -272,4 +287,331 @@ func migrateLegacyConfig() error {
 	}
 
 	return nil
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Migration from Legacy Format
+// ─────────────────────────────────────────────────────────────────────────────
+
+// migrateToNewFormat converts legacy Provider format to new Credential + Profile format.
+func (c *Config) migrateToNewFormat() error {
+	if len(c.Providers) == 0 {
+		return nil // Nothing to migrate
+	}
+
+	// Already migrated if we have credentials
+	if len(c.Credentials) > 0 {
+		return nil
+	}
+
+	// Create a map to dedupe credentials by API key
+	credByKey := make(map[string]*types.APICredential)
+
+	for _, p := range c.Providers {
+		// Check if credential already exists
+		cred, exists := credByKey[p.APIKey]
+		if !exists {
+			// Create new credential
+			cred = &types.APICredential{
+				ID:      uuid.New().String(),
+				Name:    p.Name + " API",
+				Type:    p.Type,
+				BaseURL: p.BaseURL,
+				APIKey:  p.APIKey,
+			}
+			credByKey[p.APIKey] = cred
+			c.Credentials = append(c.Credentials, *cred)
+		}
+
+		// Create translation profile
+		profile := types.TranslationProfile{
+			ID:              uuid.New().String(),
+			Name:            p.Name,
+			CredentialID:    cred.ID,
+			Model:           p.Model,
+			SystemPrompt:    p.SystemPrompt,
+			MaxTokens:       p.MaxTokens,
+			Temperature:     p.Temperature,
+			Active:          p.Active,
+			DisableThinking: p.DisableThinking,
+		}
+		c.TranslationProfiles = append(c.TranslationProfiles, profile)
+	}
+
+	// Clear legacy providers after migration
+	c.Providers = nil
+
+	// Save migrated config
+	return c.Save()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// API Credential Management
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GetCredentials returns all API credentials.
+func (c *Config) GetCredentials() []types.APICredential {
+	return c.Credentials
+}
+
+// GetCredential returns a credential by ID.
+func (c *Config) GetCredential(id string) *types.APICredential {
+	for i := range c.Credentials {
+		if c.Credentials[i].ID == id {
+			return &c.Credentials[i]
+		}
+	}
+	return nil
+}
+
+// AddCredential adds a new API credential.
+func (c *Config) AddCredential(cred types.APICredential) error {
+	if cred.Name == "" {
+		return fmt.Errorf("credential name required")
+	}
+	if cred.APIKey == "" {
+		return fmt.Errorf("api key required")
+	}
+	if cred.Type == "openai-compatible" && cred.BaseURL == "" {
+		return fmt.Errorf("base url required for openai-compatible")
+	}
+
+	if cred.ID == "" {
+		cred.ID = uuid.New().String()
+	}
+
+	c.Credentials = append(c.Credentials, cred)
+	return c.Save()
+}
+
+// UpdateCredential updates an existing credential.
+func (c *Config) UpdateCredential(id string, cred types.APICredential) error {
+	idx := slices.IndexFunc(c.Credentials, func(x types.APICredential) bool {
+		return x.ID == id
+	})
+	if idx == -1 {
+		return fmt.Errorf("credential not found: %s", id)
+	}
+
+	cred.ID = id // Preserve ID
+	c.Credentials[idx] = cred
+	return c.Save()
+}
+
+// RemoveCredential removes a credential by ID.
+// Returns error if credential is in use by any profile or speech config.
+func (c *Config) RemoveCredential(id string) error {
+	// Check if in use by translation profiles
+	for _, p := range c.TranslationProfiles {
+		if p.CredentialID == id {
+			return fmt.Errorf("credential in use by translation profile: %s", p.Name)
+		}
+	}
+	// Check if in use by speech config
+	if c.SpeechConfig != nil && c.SpeechConfig.CredentialID == id {
+		return fmt.Errorf("credential in use by speech config")
+	}
+
+	idx := slices.IndexFunc(c.Credentials, func(x types.APICredential) bool {
+		return x.ID == id
+	})
+	if idx == -1 {
+		return fmt.Errorf("credential not found: %s", id)
+	}
+
+	c.Credentials = slices.Delete(c.Credentials, idx, idx+1)
+	return c.Save()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Translation Profile Management
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GetTranslationProfiles returns all translation profiles.
+func (c *Config) GetTranslationProfiles() []types.TranslationProfile {
+	return c.TranslationProfiles
+}
+
+// GetActiveTranslationProfile returns the currently active translation profile.
+func (c *Config) GetActiveTranslationProfile() *types.TranslationProfile {
+	for i := range c.TranslationProfiles {
+		if c.TranslationProfiles[i].Active {
+			return &c.TranslationProfiles[i]
+		}
+	}
+	// Auto-activate first if none active
+	if len(c.TranslationProfiles) > 0 {
+		c.TranslationProfiles[0].Active = true
+		_ = c.Save()
+		return &c.TranslationProfiles[0]
+	}
+	return nil
+}
+
+// AddTranslationProfile adds a new translation profile.
+func (c *Config) AddTranslationProfile(profile types.TranslationProfile) error {
+	if profile.Name == "" {
+		return fmt.Errorf("profile name required")
+	}
+	if profile.CredentialID == "" {
+		return fmt.Errorf("credential id required")
+	}
+	if profile.Model == "" {
+		return fmt.Errorf("model required")
+	}
+
+	// Validate credential exists
+	if c.GetCredential(profile.CredentialID) == nil {
+		return fmt.Errorf("credential not found: %s", profile.CredentialID)
+	}
+
+	if profile.ID == "" {
+		profile.ID = uuid.New().String()
+	}
+
+	// Apply defaults
+	if profile.MaxTokens == 0 {
+		profile.MaxTokens = types.DefaultMaxTokens
+	}
+	if profile.Temperature == 0 {
+		profile.Temperature = types.DefaultTemperature
+	}
+
+	// First profile or explicitly active: deactivate others
+	if len(c.TranslationProfiles) == 0 || profile.Active {
+		for i := range c.TranslationProfiles {
+			c.TranslationProfiles[i].Active = false
+		}
+		profile.Active = true
+	}
+
+	c.TranslationProfiles = append(c.TranslationProfiles, profile)
+	return c.Save()
+}
+
+// UpdateTranslationProfile updates an existing translation profile.
+func (c *Config) UpdateTranslationProfile(id string, profile types.TranslationProfile) error {
+	idx := slices.IndexFunc(c.TranslationProfiles, func(x types.TranslationProfile) bool {
+		return x.ID == id
+	})
+	if idx == -1 {
+		return fmt.Errorf("profile not found: %s", id)
+	}
+
+	// Validate credential exists
+	if c.GetCredential(profile.CredentialID) == nil {
+		return fmt.Errorf("credential not found: %s", profile.CredentialID)
+	}
+
+	wasActive := c.TranslationProfiles[idx].Active
+	if profile.Active && !wasActive {
+		for i := range c.TranslationProfiles {
+			c.TranslationProfiles[i].Active = false
+		}
+	} else {
+		profile.Active = wasActive
+	}
+
+	profile.ID = id // Preserve ID
+	c.TranslationProfiles[idx] = profile
+	return c.Save()
+}
+
+// RemoveTranslationProfile removes a translation profile by ID.
+func (c *Config) RemoveTranslationProfile(id string) error {
+	idx := slices.IndexFunc(c.TranslationProfiles, func(x types.TranslationProfile) bool {
+		return x.ID == id
+	})
+	if idx == -1 {
+		return fmt.Errorf("profile not found: %s", id)
+	}
+
+	wasActive := c.TranslationProfiles[idx].Active
+	c.TranslationProfiles = slices.Delete(c.TranslationProfiles, idx, idx+1)
+
+	if wasActive && len(c.TranslationProfiles) > 0 {
+		c.TranslationProfiles[0].Active = true
+	}
+
+	return c.Save()
+}
+
+// SetTranslationProfileActive sets a translation profile as active.
+func (c *Config) SetTranslationProfileActive(id string) error {
+	found := false
+	for i := range c.TranslationProfiles {
+		if c.TranslationProfiles[i].ID == id {
+			c.TranslationProfiles[i].Active = true
+			found = true
+		} else {
+			c.TranslationProfiles[i].Active = false
+		}
+	}
+	if !found {
+		return fmt.Errorf("profile not found: %s", id)
+	}
+	return c.Save()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Speech Configuration
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GetSpeechConfig returns the speech configuration.
+func (c *Config) GetSpeechConfig() *types.SpeechConfig {
+	return c.SpeechConfig
+}
+
+// SetSpeechConfig sets the speech configuration.
+func (c *Config) SetSpeechConfig(cfg types.SpeechConfig) error {
+	// Validate credential exists if enabled
+	if cfg.Enabled && cfg.CredentialID != "" {
+		cred := c.GetCredential(cfg.CredentialID)
+		if cred == nil {
+			return fmt.Errorf("credential not found: %s", cfg.CredentialID)
+		}
+		// Validate it's OpenAI compatible
+		if cred.Type != "openai" && cred.Type != "openai-compatible" {
+			return fmt.Errorf("speech config requires OpenAI-compatible credential")
+		}
+	}
+
+	// Default model
+	if cfg.Model == "" {
+		cfg.Model = "whisper-1"
+	}
+
+	c.SpeechConfig = &cfg
+	return c.Save()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Compatibility: Build Provider from new format for existing code
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GetActiveProviderCompat returns a legacy Provider struct for backward compatibility.
+// This allows existing code to continue working during the transition.
+func (c *Config) GetActiveProviderCompat() *types.Provider {
+	profile := c.GetActiveTranslationProfile()
+	if profile == nil {
+		return nil
+	}
+
+	cred := c.GetCredential(profile.CredentialID)
+	if cred == nil {
+		return nil
+	}
+
+	return &types.Provider{
+		Name:            profile.Name,
+		Type:            cred.Type,
+		BaseURL:         cred.BaseURL,
+		APIKey:          cred.APIKey,
+		Model:           profile.Model,
+		SystemPrompt:    profile.SystemPrompt,
+		MaxTokens:       profile.MaxTokens,
+		Temperature:     profile.Temperature,
+		Active:          profile.Active,
+		DisableThinking: profile.DisableThinking,
+	}
 }
