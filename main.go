@@ -11,6 +11,7 @@ import (
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+	"go.aimuz.me/transy/audiocapture"
 	"go.aimuz.me/transy/cache"
 	"go.aimuz.me/transy/clipboard"
 	"go.aimuz.me/transy/config"
@@ -21,7 +22,6 @@ import (
 	"go.aimuz.me/transy/llm"
 	"go.aimuz.me/transy/ocr"
 	"go.aimuz.me/transy/screenshot"
-	"go.aimuz.me/transy/stt"
 )
 
 //go:embed all:frontend/dist
@@ -43,7 +43,10 @@ type App struct {
 
 	// Live translation
 	liveService types.LiveTranslator
-	sttRegistry *stt.Registry
+
+	// Audio capture for frontend bridge
+	audioCapture  audiocapture.Capturer
+	audioStopChan chan struct{}
 }
 
 func NewApp() *App {
@@ -69,9 +72,6 @@ func (a *App) Init(app *application.App, window application.Window) {
 	// Initialize cache
 	a.setupCache()
 
-	// Initialize STT providers
-	a.setupSTT()
-
 	a.setupHotkey()
 }
 
@@ -82,9 +82,6 @@ func (a *App) Shutdown() {
 	}
 	if a.liveService != nil {
 		a.liveService.Stop()
-	}
-	if a.sttRegistry != nil {
-		a.sttRegistry.Close()
 	}
 	if a.cache != nil {
 		if err := a.cache.Close(); err != nil {
@@ -110,59 +107,6 @@ func (a *App) setupCache() {
 	slog.Info("cache initialized", "path", cachePath)
 }
 
-func (a *App) setupSTT() {
-	a.sttRegistry = stt.NewRegistry()
-
-	// Register macOS Speech provider first (lowest latency, on-device)
-	// Note: We don't call any cgo/Speech Framework functions here to avoid
-	// crashes during AppKit initialization. Authorization will be checked
-	// lazily when the provider is actually used.
-	speechProvider, err := stt.NewSpeechDarwin()
-	if err != nil {
-		slog.Error("init macOS Speech provider", "error", err)
-	} else {
-		speechProvider.MarkAppStarted() // Allow cgo calls, but don't make any yet
-		a.sttRegistry.Register(speechProvider)
-		slog.Info("registered macOS Speech provider (authorization checked on first use)")
-	}
-
-	// Register API provider if configured via SpeechConfig
-	speechCfg := a.cfg.GetSpeechConfig()
-	if speechCfg != nil && speechCfg.Enabled && speechCfg.CredentialID != "" {
-		cred := a.cfg.GetCredential(speechCfg.CredentialID)
-		if cred != nil {
-			model := speechCfg.Model
-			if model == "" {
-				model = "whisper-1"
-			}
-			apiProvider := stt.NewWhisperAPI(stt.WhisperAPIConfig{
-				APIKey:  cred.APIKey,
-				BaseURL: cred.BaseURL,
-				Model:   model,
-			})
-			a.sttRegistry.Register(apiProvider)
-			slog.Info("registered OpenAI Whisper API provider", "credential", cred.Name)
-		}
-	}
-
-	// Register local whisper provider (may not be ready if whisper.cpp not installed)
-	localProvider, err := stt.NewWhisperLocal(stt.WhisperLocalConfig{
-		ModelSize: "base",
-	})
-	if err != nil {
-		slog.Error("init whisper local", "error", err)
-	} else {
-		a.sttRegistry.Register(localProvider)
-		if localProvider.HasBinary() {
-			slog.Info("registered Whisper Local provider", "ready", localProvider.IsReady())
-		} else {
-			slog.Warn("Whisper Local registered but whisper.cpp binary not found - install with: brew install whisper-cpp")
-		}
-	}
-
-	slog.Info("STT providers initialized", "count", len(a.sttRegistry.List()))
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Live Translation
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,7 +116,12 @@ func (a *App) setupSTT() {
 func (a *App) StartLiveTranslation(sourceLang, targetLang string) error {
 	cfg := a.buildTranslatorConfig()
 
-	translator, err := livetranslate.NewOrReuse(a.liveService, cfg)
+	// Stop existing service if running to ensure clean state
+	if a.liveService != nil {
+		_ = a.liveService.Stop()
+	}
+
+	translator, err := livetranslate.New(cfg)
 	if err != nil {
 		return err
 	}
@@ -184,19 +133,60 @@ func (a *App) StartLiveTranslation(sourceLang, targetLang string) error {
 
 	// Start goroutines to forward transcripts and errors to frontend
 	go a.forwardTranscripts()
+	go a.forwardVADUpdates()
 	go a.forwardErrors()
 
 	return nil
 }
 
 // forwardTranscripts forwards transcript events from the service to the frontend.
+// If a transcript is final and has source text, it also triggers async translation.
 func (a *App) forwardTranscripts() {
 	if a.liveService == nil {
 		return
 	}
 	for transcript := range a.liveService.Transcripts() {
+		if a.app == nil {
+			continue
+		}
+		// Emit immediately for fast feedback (source text visible right away)
+		a.app.Event.Emit("live-transcript", transcript)
+
+		// If final with source text, translate async and emit updated transcript
+		if transcript.IsFinal && transcript.SourceText != "" && transcript.TargetText == "" {
+			go a.translateAndEmit(transcript)
+		}
+	}
+}
+
+// translateAndEmit translates the transcript and emits an updated event.
+func (a *App) translateAndEmit(t types.LiveTranscript) {
+	if a.app == nil {
+		return
+	}
+
+	result, err := a.TranslateWithLLM(types.TranslateRequest{
+		Text:       t.SourceText,
+		SourceLang: t.SourceLang,
+		TargetLang: t.TargetLang,
+	})
+	if err != nil {
+		slog.Warn("async translate failed", "id", t.ID, "error", err)
+		return
+	}
+
+	t.TargetText = result.Text
+	a.app.Event.Emit("live-transcript", t)
+}
+
+// forwardVADUpdates forwards VAD state changes from the service to the frontend.
+func (a *App) forwardVADUpdates() {
+	if a.liveService == nil {
+		return
+	}
+	for state := range a.liveService.VADUpdates() {
 		if a.app != nil {
-			a.app.Event.Emit("live-transcript", transcript)
+			a.app.Event.Emit("live-vad-update", state)
 		}
 	}
 }
@@ -212,64 +202,21 @@ func (a *App) forwardErrors() {
 }
 
 // buildTranslatorConfig builds factory configuration from app settings.
-func (a *App) buildTranslatorConfig() livetranslate.FactoryConfig {
+func (a *App) buildTranslatorConfig() livetranslate.Config {
 	speechCfg := a.cfg.GetSpeechConfig()
 
-	cfg := livetranslate.FactoryConfig{}
+	cfg := livetranslate.Config{}
 
-	if speechCfg == nil {
-		cfg.Mode = "transcription"
-		cfg.STTProvider = a.findSTTProvider()
-		cfg.TranslateFunc = a.translateFunc
-		return cfg
-	}
-
-	cfg.Mode = speechCfg.Mode
-
-	if cfg.Mode == "realtime" {
+	if speechCfg != nil && speechCfg.CredentialID != "" {
 		if cred := a.cfg.GetCredential(speechCfg.CredentialID); cred != nil {
 			cfg.APIKey = cred.APIKey
 		}
 		cfg.Model = speechCfg.Model
 		cfg.SystemPrompt = "You are a professional translator. Translate the input audio text into the target language directly. Output only the translated text."
 		cfg.Temperature = 0.6
-	} else {
-		cfg.STTProvider = a.findSTTProvider()
-		cfg.TranslateFunc = a.translateFunc
 	}
 
 	return cfg
-}
-
-// translateFunc translates text using the configured LLM.
-func (a *App) translateFunc(text, ctx, srcLang, dstLang string) (string, error) {
-	result, err := a.TranslateWithLLM(types.TranslateRequest{
-		Text:       text,
-		SourceLang: srcLang,
-		TargetLang: dstLang,
-		Context:    ctx,
-	})
-	if err != nil {
-		return "", err
-	}
-	return result.Text, nil
-}
-
-// findSTTProvider finds an available STT provider.
-func (a *App) findSTTProvider() stt.Provider {
-	if a.cfg.STTProvider != "" {
-		if p := a.sttRegistry.Get(a.cfg.STTProvider); p != nil {
-			return p
-		}
-	}
-	if p := a.sttRegistry.Get("whisper-local"); p != nil {
-		return p
-	}
-	providers := a.sttRegistry.List()
-	if len(providers) > 0 {
-		return providers[0]
-	}
-	return nil
 }
 
 // StopLiveTranslation stops real-time audio translation.
@@ -286,105 +233,6 @@ func (a *App) GetLiveStatus() types.LiveStatus {
 		return types.LiveStatus{}
 	}
 	return a.liveService.Status()
-}
-
-// GetSTTProviders returns available STT providers.
-func (a *App) GetSTTProviders() []types.STTProviderInfo {
-	if a.sttRegistry == nil {
-		return nil
-	}
-
-	providers := a.sttRegistry.List()
-	result := make([]types.STTProviderInfo, len(providers))
-	for i, p := range providers {
-		result[i] = types.STTProviderInfo{
-			Name:          p.Name(),
-			DisplayName:   p.DisplayName(),
-			IsLocal:       p.IsLocal(),
-			RequiresSetup: p.RequiresSetup(),
-			SetupProgress: p.SetupProgress(),
-			IsReady:       p.IsReady(),
-		}
-	}
-	return result
-}
-
-// SetSTTProvider sets the active STT provider for live translation.
-func (a *App) SetSTTProvider(name string) error {
-	if a.sttRegistry == nil {
-		return fmt.Errorf("STT registry not initialized")
-	}
-
-	provider := a.sttRegistry.Get(name)
-	if provider == nil {
-		return fmt.Errorf("provider not found: %s", name)
-	}
-
-	// Save preference
-	a.cfg.STTProvider = name
-	if err := a.cfg.Save(); err != nil {
-		slog.Error("save config", "error", err)
-	}
-
-	if a.liveService != nil {
-		if srv, ok := a.liveService.(*livetranslate.Service); ok {
-			srv.SetSTTProvider(provider)
-		}
-	}
-	return nil
-}
-
-// SetupSTTProvider downloads/initializes an STT provider.
-func (a *App) SetupSTTProvider(name string) error {
-	if a.sttRegistry == nil {
-		return fmt.Errorf("STT registry not initialized")
-	}
-
-	provider := a.sttRegistry.Get(name)
-	if provider == nil {
-		return fmt.Errorf("provider not found: %s", name)
-	}
-
-	// Run setup in background, emit progress events
-	go func() {
-		err := provider.Setup(func(percent int) {
-			if a.app != nil {
-				a.app.Event.Emit("stt-setup-progress", map[string]interface{}{
-					"provider": name,
-					"progress": percent,
-				})
-			}
-		})
-		if err != nil {
-			slog.Error("STT setup failed", "provider", name, "error", err)
-			if a.app != nil {
-				a.app.Event.Emit("stt-setup-error", map[string]interface{}{
-					"provider": name,
-					"error":    err.Error(),
-				})
-			}
-		} else {
-			if a.app != nil {
-				a.app.Event.Emit("stt-setup-complete", name)
-			}
-		}
-	}()
-
-	return nil
-}
-
-// GetSTTSetupProgress returns the setup progress for a provider.
-func (a *App) GetSTTSetupProgress(name string) int {
-	if a.sttRegistry == nil {
-		return -1
-	}
-
-	provider := a.sttRegistry.Get(name)
-	if provider == nil {
-		return -1
-	}
-
-	return provider.SetupProgress()
 }
 
 func (a *App) setupHotkey() {
@@ -504,6 +352,76 @@ func (a *App) RequestScreenRecordingPermission() {
 
 func (a *App) GetVersion() string {
 	return version
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audio Capture Test (for frontend WebRTC bridge)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// StartAudioCapture starts capturing system audio and streams it to frontend.
+// Audio samples are emitted as "audio-samples" events.
+func (a *App) StartAudioCapture() error {
+	if a.audioCapture != nil {
+		return fmt.Errorf("audio capture already running")
+	}
+
+	// Create audio capture at 48kHz (WebRTC Opus standard)
+	cap, err := audiocapture.New(48000)
+	if err != nil {
+		return fmt.Errorf("create audio capture: %w", err)
+	}
+
+	a.audioStopChan = make(chan struct{})
+	sampleCount := 0
+
+	// Start capturing with inline handler
+	if err := cap.Start(func(samples []float32) {
+		select {
+		case <-a.audioStopChan:
+			return
+		default:
+		}
+
+		if a.app != nil {
+			sampleCount++
+			a.app.Event.Emit("audio-samples", map[string]interface{}{
+				"samples":   samples,
+				"timestamp": time.Now().UnixMilli(),
+				"seq":       sampleCount,
+			})
+		}
+
+		if sampleCount%100 == 0 {
+			slog.Debug("streamed audio samples", "count", sampleCount, "samples", len(samples))
+		}
+	}); err != nil {
+		return fmt.Errorf("start audio capture: %w", err)
+	}
+
+	a.audioCapture = cap
+	slog.Info("audio capture started for frontend bridge")
+	return nil
+}
+
+// StopAudioCapture stops the audio capture.
+func (a *App) StopAudioCapture() error {
+	if a.audioCapture == nil {
+		return nil
+	}
+
+	// Signal stop
+	if a.audioStopChan != nil {
+		close(a.audioStopChan)
+		a.audioStopChan = nil
+	}
+
+	if err := a.audioCapture.Stop(); err != nil {
+		return err
+	}
+	a.audioCapture = nil
+
+	slog.Info("audio capture stopped")
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -634,15 +552,7 @@ func (a *App) GetSpeechConfig() *types.SpeechConfig {
 
 // SetSpeechConfig sets the speech service configuration.
 func (a *App) SetSpeechConfig(cfg types.SpeechConfig) error {
-	if err := a.cfg.SetSpeechConfig(cfg); err != nil {
-		return err
-	}
-	// Reinitialize STT registry with new config
-	if a.sttRegistry != nil {
-		a.sttRegistry.Close()
-	}
-	a.setupSTT()
-	return nil
+	return a.cfg.SetSpeechConfig(cfg)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

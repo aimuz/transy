@@ -12,6 +12,7 @@
     setSpeechConfig,
   } from '../services/wails'
   import type { APICredential, TranslationProfile, SpeechConfig } from '../types'
+  import { TRANSCRIPTION_MODELS } from '../types'
 
   type Props = {
     // Legacy props kept for compatibility (but not used)
@@ -66,17 +67,9 @@
   // Reset model when mode changes to ensure valid selection
   $effect(() => {
     if (!speechConfig) return
-
-    if (speechConfig.mode === 'realtime') {
-      // If switching to realtime and current model is not a realtime model, reset to default
-      if (speechConfig.model && !speechConfig.model.includes('realtime')) {
-        speechConfig.model = 'gpt-4o-realtime-preview'
-      }
-    } else {
-      // If switching to transcription and current model is a realtime model, reset to default
-      if (speechConfig.model && speechConfig.model.includes('realtime')) {
-        speechConfig.model = 'whisper-1'
-      }
+    // Default to gpt-4o-transcribe if no model selected
+    if (!speechConfig.model) {
+      speechConfig.model = 'gpt-4o-transcribe'
     }
   })
 
@@ -89,12 +82,9 @@
     return false
   }
 
-  // Get credentials based on mode
+  // Only OpenAI credentials for Realtime API
   let speechCredentials = $derived.by(() => {
-    if (speechConfig?.mode === 'realtime') {
-      return credentials.filter((c) => c.type === 'openai')
-    }
-    return credentials.filter((c) => c.type === 'openai' || c.type === 'openai-compatible')
+    return credentials.filter((c) => c.type === 'openai')
   })
 
   // Handle speech config change
@@ -196,8 +186,8 @@
 
     <!-- Speech Config Section -->
     <div class="settings-section">
-      <h3>🎤 语音服务</h3>
-      <p class="settings-description">配置语音转文字 (Whisper) 或语音翻译服务</p>
+      <h3>🎤 语音转录</h3>
+      <p class="settings-description">配置 OpenAI Realtime API 语音转录服务</p>
       <div class="speech-config">
         <label class="checkbox-label">
           <input
@@ -205,44 +195,19 @@
             checked={speechConfig?.enabled || false}
             onchange={(e) => {
               if (!speechConfig) {
-                speechConfig = { enabled: e.currentTarget.checked, mode: 'transcription' }
+                speechConfig = { enabled: e.currentTarget.checked, mode: 'realtime' }
               } else {
                 speechConfig.enabled = e.currentTarget.checked
-                if (!speechConfig.mode) speechConfig.mode = 'transcription'
               }
             }}
           />
-          <span>启用语音 API</span>
+          <span>启用语音转录</span>
         </label>
 
         {#if speechConfig?.enabled}
           <div class="speech-options">
             <div class="form-group">
-              <label>模式</label>
-              <div class="mode-selector">
-                <label class="radio-label">
-                  <input
-                    type="radio"
-                    name="speech-mode"
-                    bind:group={speechConfig.mode}
-                    value="transcription"
-                  />
-                  Standard (Whisper)
-                </label>
-                <label class="radio-label">
-                  <input
-                    type="radio"
-                    name="speech-mode"
-                    bind:group={speechConfig.mode}
-                    value="realtime"
-                  />
-                  Realtime (GPT-4o)
-                </label>
-              </div>
-            </div>
-
-            <div class="form-group">
-              <label for="speech-credential">API 凭证</label>
+              <label for="speech-credential">OpenAI API 凭证</label>
               <select id="speech-credential" bind:value={speechConfig.credential_id}>
                 <option value="">选择凭证...</option>
                 {#each speechCredentials as cred}
@@ -250,29 +215,18 @@
                 {/each}
               </select>
               {#if speechCredentials.length === 0}
-                <span class="help-text warning">
-                  {#if speechConfig.mode === 'realtime'}
-                    需要 OpenAI 官方 API 凭证
-                  {:else}
-                    需要 OpenAI 或兼容的 API 凭证
-                  {/if}
-                </span>
+                <span class="help-text warning">需要添加 OpenAI API 凭证</span>
               {/if}
             </div>
 
             <div class="form-group">
-              <label for="speech-model">模型</label>
+              <label for="speech-model">转录模型</label>
               <select id="speech-model" bind:value={speechConfig.model}>
-                {#if speechConfig.mode === 'realtime'}
-                  <option value="gpt-realtime">gpt-realtime</option>
-                  <option value="gpt-realtime-mini">gpt-realtime-mini</option>
-                  <option value="gpt-4o-realtime-preview">gpt-4o-realtime-preview</option>
-                  <option value="gpt-4o-mini-realtime-preview">gpt-4o-mini-realtime-preview</option>
-                {:else}
-                  <option value="whisper-1">whisper-1 (OpenAI)</option>
-                  <option value="whisper-large-v3">whisper-large-v3</option>
-                {/if}
+                {#each TRANSCRIPTION_MODELS as model}
+                  <option value={model.id}>{model.name}</option>
+                {/each}
               </select>
+              <span class="help-text">使用 OpenAI Realtime API 进行实时语音转录</span>
             </div>
 
             <button class="btn btn-primary" onclick={handleSpeechConfigChange}>保存语音设置</button>

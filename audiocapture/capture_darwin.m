@@ -2,18 +2,16 @@
 
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 #import <CoreMedia/CoreMedia.h>
-#import <CoreAudio/CoreAudio.h>
 #import <Foundation/Foundation.h>
-#import <AVFoundation/AVFoundation.h>
 #include <stdlib.h>
+#include <string.h>
 
-// Forward declaration of Go callback (implemented in capture_darwin.go)
-extern void goAudioCallback(void* context, float* samples, int count);
+// Forward declaration of Go callback
+extern void goAudioCallback(float* samples, int count);
 
 // Audio capture delegate
 API_AVAILABLE(macos(12.3))
 @interface AudioCaptureDelegate : NSObject <SCStreamDelegate, SCStreamOutput>
-@property (nonatomic, assign) void* goContext;
 @property (nonatomic, assign) int targetSampleRate;
 @end
 
@@ -25,7 +23,6 @@ API_AVAILABLE(macos(12.3))
         return;
     }
 
-    // Get audio buffer
     CMBlockBufferRef blockBuffer = CMSampleBufferGetDataBuffer(sampleBuffer);
     if (blockBuffer == NULL) {
         return;
@@ -33,46 +30,46 @@ API_AVAILABLE(macos(12.3))
 
     size_t length = 0;
     char* data = NULL;
-    OSStatus status = CMBlockBufferGetDataPointer(blockBuffer, 0, NULL, &length, &data);
-    if (status != kCMBlockBufferNoErr || data == NULL) {
+    if (CMBlockBufferGetDataPointer(blockBuffer, 0, NULL, &length, &data) != kCMBlockBufferNoErr || data == NULL) {
         return;
     }
 
-    // Get format description
     CMFormatDescriptionRef formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer);
     const AudioStreamBasicDescription* asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc);
     if (asbd == NULL) {
         return;
     }
 
-    // Convert to float32 and resample if needed
-    int numSamples = (int)(length / sizeof(float));
     float* floatData = (float*)data;
+    int numSamples = (int)(length / sizeof(float));
+    int channels = (int)asbd->mChannelsPerFrame;
 
-    // If stereo, convert to mono
-    if (asbd->mChannelsPerFrame == 2) {
-        int monoSamples = numSamples / 2;
-        float* monoData = (float*)malloc(monoSamples * sizeof(float));
-        for (int i = 0; i < monoSamples; i++) {
-            monoData[i] = (floatData[i * 2] + floatData[i * 2 + 1]) / 2.0f;
+    // Stereo to mono + resample in one pass
+    if (channels == 2 && (int)asbd->mSampleRate == 48000 && self.targetSampleRate == 16000) {
+        // 48kHz stereo -> 16kHz mono: take every 3rd pair, average L+R
+        int outCount = numSamples / 6;
+        float* out = (float*)malloc(outCount * sizeof(float));
+        for (int i = 0; i < outCount; i++) {
+            int j = i * 6;
+            out[i] = (floatData[j] + floatData[j + 1]) * 0.5f;
         }
-
-        // Resample to target sample rate if needed
-        // ScreenCaptureKit typically outputs 48kHz, Whisper expects 16kHz
-        if ((int)asbd->mSampleRate == 48000 && self.targetSampleRate == 16000) {
-            int resampledCount = monoSamples / 3;
-            float* resampledData = (float*)malloc(resampledCount * sizeof(float));
-            for (int i = 0; i < resampledCount; i++) {
-                resampledData[i] = monoData[i * 3];
-            }
-            goAudioCallback(self.goContext, resampledData, resampledCount);
-            free(resampledData);
-        } else {
-            goAudioCallback(self.goContext, monoData, monoSamples);
+        goAudioCallback(out, outCount);
+        free(out);
+    } else if (channels == 2 && (int)asbd->mSampleRate == 48000 && self.targetSampleRate == 48000) {
+        // 48kHz stereo passthrough - no conversion needed
+        goAudioCallback(floatData, numSamples);
+    } else if (channels == 2) {
+        // Stereo to mono only (other sample rates)
+        int monoCount = numSamples / 2;
+        float* out = (float*)malloc(monoCount * sizeof(float));
+        for (int i = 0; i < monoCount; i++) {
+            out[i] = (floatData[i * 2] + floatData[i * 2 + 1]) * 0.5f;
         }
-        free(monoData);
+        goAudioCallback(out, monoCount);
+        free(out);
     } else {
-        goAudioCallback(self.goContext, floatData, numSamples);
+        // Mono passthrough
+        goAudioCallback(floatData, numSamples);
     }
 }
 
@@ -88,107 +85,94 @@ API_AVAILABLE(macos(12.3))
 static SCStream* currentStream API_AVAILABLE(macos(12.3)) = nil;
 static AudioCaptureDelegate* currentDelegate API_AVAILABLE(macos(12.3)) = nil;
 
-// Start audio capture with callback
-int startAudioCaptureWithCallback(void* goContext, int targetSampleRate) {
+// Helper to set error string
+static void setError(char** errOut, NSString* msg) {
+    if (errOut != NULL) {
+        const char* utf8 = [msg UTF8String];
+        *errOut = strdup(utf8);
+    }
+}
+
+// Start audio capture
+int startAudioCapture(int targetSampleRate, char** errOut) {
     if (@available(macOS 12.3, *)) {
-        dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
         __block int result = 0;
+        __block NSString* errorMsg = nil;
 
         dispatch_async(dispatch_get_main_queue(), ^{
-            [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent * _Nullable content, NSError * _Nullable error) {
+            [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent* content, NSError* error) {
                 if (error) {
-                    NSLog(@"Failed to get shareable content: %@", error);
+                    errorMsg = [NSString stringWithFormat:@"screen recording permission required: %@", error.localizedDescription];
                     result = -1;
-                    dispatch_semaphore_signal(semaphore);
+                    dispatch_semaphore_signal(sem);
                     return;
                 }
 
                 if (content.displays.count == 0) {
-                    NSLog(@"No displays available");
-                    result = -2;
-                    dispatch_semaphore_signal(semaphore);
+                    errorMsg = @"no displays available";
+                    result = -1;
+                    dispatch_semaphore_signal(sem);
                     return;
                 }
 
-                // Use first display
                 SCDisplay* display = content.displays[0];
-
-                // Create content filter for the display
                 SCContentFilter* filter = [[SCContentFilter alloc] initWithDisplay:display excludingApplications:@[] exceptingWindows:@[]];
 
-                // Configure stream
                 SCStreamConfiguration* config = [[SCStreamConfiguration alloc] init];
                 config.capturesAudio = YES;
                 config.excludesCurrentProcessAudio = NO;
-
-                // Minimal video capture (we only need audio)
                 config.width = 2;
                 config.height = 2;
-                config.minimumFrameInterval = CMTimeMake(1, 1); // 1 fps minimal
-
-                // Audio configuration
-                config.sampleRate = 48000; // ScreenCaptureKit uses 48kHz
+                config.minimumFrameInterval = CMTimeMake(1, 1);
+                config.sampleRate = 48000;
                 config.channelCount = 2;
 
-                // Create delegate
                 currentDelegate = [[AudioCaptureDelegate alloc] init];
-                currentDelegate.goContext = goContext;
                 currentDelegate.targetSampleRate = targetSampleRate;
 
-                // Create stream
                 currentStream = [[SCStream alloc] initWithFilter:filter configuration:config delegate:currentDelegate];
 
-                NSError* addOutputError = nil;
-                [currentStream addStreamOutput:currentDelegate type:SCStreamOutputTypeAudio sampleHandlerQueue:dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0) error:&addOutputError];
-                if (addOutputError) {
-                    NSLog(@"Failed to add stream output: %@", addOutputError);
-                    result = -3;
-                    dispatch_semaphore_signal(semaphore);
+                NSError* addErr = nil;
+                [currentStream addStreamOutput:currentDelegate type:SCStreamOutputTypeAudio sampleHandlerQueue:dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0) error:&addErr];
+                if (addErr) {
+                    errorMsg = [NSString stringWithFormat:@"failed to add stream output: %@", addErr.localizedDescription];
+                    result = -1;
+                    dispatch_semaphore_signal(sem);
                     return;
                 }
 
-                [currentStream startCaptureWithCompletionHandler:^(NSError * _Nullable startError) {
-                    if (startError) {
-                        NSLog(@"Failed to start capture: %@", startError);
-                        result = -4;
-                    } else {
-                        result = 0;
+                [currentStream startCaptureWithCompletionHandler:^(NSError* startErr) {
+                    if (startErr) {
+                        errorMsg = [NSString stringWithFormat:@"failed to start capture: %@", startErr.localizedDescription];
+                        result = -1;
                     }
-                    dispatch_semaphore_signal(semaphore);
+                    dispatch_semaphore_signal(sem);
                 }];
             }];
         });
 
-        dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
+        dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
+        if (result != 0 && errorMsg) {
+            setError(errOut, errorMsg);
+        }
         return result;
     }
-    return -100; // macOS version not supported
+    setError(errOut, @"macOS 12.3 or later required");
+    return -1;
 }
 
 // Stop audio capture
 void stopAudioCapture(void) {
     if (@available(macOS 12.3, *)) {
         if (currentStream != nil) {
-            dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
-
-            [currentStream stopCaptureWithCompletionHandler:^(NSError * _Nullable error) {
-                if (error) {
-                    NSLog(@"Failed to stop capture: %@", error);
-                }
-                dispatch_semaphore_signal(semaphore);
+            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+            [currentStream stopCaptureWithCompletionHandler:^(NSError* error) {
+                dispatch_semaphore_signal(sem);
             }];
-
-            dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
+            dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC));
             currentStream = nil;
             currentDelegate = nil;
         }
     }
-}
-
-// Check if capturing
-int isAudioCapturing(void) {
-    if (@available(macOS 12.3, *)) {
-        return currentStream != nil ? 1 : 0;
-    }
-    return 0;
 }

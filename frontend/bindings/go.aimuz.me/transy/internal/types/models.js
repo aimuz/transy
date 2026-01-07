@@ -169,6 +169,14 @@ export class LiveStatus {
              */
             this["transcriptCount"] = 0;
         }
+        if (!("vadState" in $$source)) {
+            /**
+             * Current VAD state
+             * @member
+             * @type {VADState}
+             */
+            this["vadState"] = VADState.$zero;
+        }
 
         Object.assign(this, $$source);
     }
@@ -278,78 +286,6 @@ export class Provider {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new Provider(/** @type {Partial<Provider>} */($$parsedSource));
-    }
-}
-
-/**
- * STTProviderInfo represents information about an STT provider.
- */
-export class STTProviderInfo {
-    /**
-     * Creates a new STTProviderInfo instance.
-     * @param {Partial<STTProviderInfo>} [$$source = {}] - The source object to create the STTProviderInfo.
-     */
-    constructor($$source = {}) {
-        if (!("name" in $$source)) {
-            /**
-             * Provider identifier
-             * @member
-             * @type {string}
-             */
-            this["name"] = "";
-        }
-        if (!("displayName" in $$source)) {
-            /**
-             * Human-readable name
-             * @member
-             * @type {string}
-             */
-            this["displayName"] = "";
-        }
-        if (!("isLocal" in $$source)) {
-            /**
-             * Whether it runs locally
-             * @member
-             * @type {boolean}
-             */
-            this["isLocal"] = false;
-        }
-        if (!("requiresSetup" in $$source)) {
-            /**
-             * Whether setup is needed (e.g., model download)
-             * @member
-             * @type {boolean}
-             */
-            this["requiresSetup"] = false;
-        }
-        if (!("setupProgress" in $$source)) {
-            /**
-             * Setup progress 0-100, -1 if not started
-             * @member
-             * @type {number}
-             */
-            this["setupProgress"] = 0;
-        }
-        if (!("isReady" in $$source)) {
-            /**
-             * Whether the provider is ready to use
-             * @member
-             * @type {boolean}
-             */
-            this["isReady"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new STTProviderInfo instance from a string or object.
-     * @param {any} [$$source = {}]
-     * @returns {STTProviderInfo}
-     */
-    static createFrom($$source = {}) {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new STTProviderInfo(/** @type {Partial<STTProviderInfo>} */($$parsedSource));
     }
 }
 
@@ -648,6 +584,22 @@ export class Usage {
         return new Usage(/** @type {Partial<Usage>} */($$parsedSource));
     }
 }
+
+/**
+ * VADState represents the current voice activity state.
+ * @readonly
+ * @enum {string}
+ */
+export const VADState = {
+    /**
+     * The Go zero value for the underlying type of the enum.
+     */
+    $zero: "",
+
+    VADStateListening: "listening",
+    VADStateSpeaking: "speaking",
+    VADStateProcessing: "processing",
+};
 
 // Private type creation functions
 const $$createType0 = Usage.createFrom;

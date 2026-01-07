@@ -111,14 +111,24 @@ type LiveTranscript struct {
 	Translated string `json:"translated,omitempty"` // Deprecated: use TargetText
 }
 
+// VADState represents the current voice activity state.
+type VADState string
+
+const (
+	VADStateListening  VADState = "listening"
+	VADStateSpeaking   VADState = "speaking"
+	VADStateProcessing VADState = "processing"
+)
+
 // LiveStatus represents the status of live translation.
 type LiveStatus struct {
-	Active          bool   `json:"active"`
-	SourceLang      string `json:"sourceLang"`
-	TargetLang      string `json:"targetLang"`
-	Duration        int64  `json:"duration"`        // Running duration in seconds
-	STTProvider     string `json:"sttProvider"`     // Current STT provider name
-	TranscriptCount int    `json:"transcriptCount"` // Number of transcribed segments
+	Active          bool     `json:"active"`
+	SourceLang      string   `json:"sourceLang"`
+	TargetLang      string   `json:"targetLang"`
+	Duration        int64    `json:"duration"`        // Running duration in seconds
+	STTProvider     string   `json:"sttProvider"`     // Current STT provider name
+	TranscriptCount int      `json:"transcriptCount"` // Number of transcribed segments
+	VADState        VADState `json:"vadState"`        // Current VAD state
 }
 
 // STTProviderInfo represents information about an STT provider.
@@ -152,4 +162,7 @@ type LiveTranslator interface {
 
 	// Status returns the current status of the translation service.
 	Status() LiveStatus
+
+	// VADUpdates returns a channel for receiving Voice Activity Detection state changes.
+	VADUpdates() <-chan VADState
 }

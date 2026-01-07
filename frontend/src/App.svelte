@@ -3,6 +3,7 @@
   import { Events, Browser } from '@wailsio/runtime'
   import TranslationPanel from './components/TranslationPanel.svelte'
   import LiveTranslation from './components/LiveTranslation.svelte'
+  import WebRTCTest from './components/WebRTCTest.svelte'
   import SettingsModal from './components/SettingsModal.svelte'
   import Toast from './components/Toast.svelte'
   import {
@@ -23,7 +24,7 @@
   let accessibilityGranted = $state(true) // 默认假设已授权，避免闪烁
   let lastUsage = $state<Usage | null>(null)
   let version = $state('v1.0')
-  let activeTab = $state<'translate' | 'live'>('translate')
+  let activeTab = $state<'translate' | 'live' | 'test'>('translate')
 
   // Toast helper
   function showToast(message: string, type: 'info' | 'error' | 'success' = 'info') {
@@ -113,6 +114,14 @@
         <span>实时</span>
         <span class="beta-badge">beta</span>
       </button>
+      <button
+        class="tab-btn"
+        class:active={activeTab === 'test'}
+        onclick={() => (activeTab = 'test')}
+      >
+        <span>🔬</span>
+        <span>Test</span>
+      </button>
     </div>
 
     {#if activeTab === 'translate'}
@@ -121,8 +130,10 @@
         onToast={showToast}
         onUsageChange={(u) => (lastUsage = u)}
       />
-    {:else}
+    {:else if activeTab === 'live'}
       <LiveTranslation onToast={showToast} />
+    {:else}
+      <WebRTCTest />
     {/if}
   </main>
 
@@ -187,6 +198,7 @@
     margin: 0 auto;
     width: 100%;
     height: 100%;
+    overflow: hidden;
   }
 
   .tabs {
@@ -196,7 +208,6 @@
     border-radius: var(--radius-lg);
     margin: 0 auto 12px auto; /* Center tabs */
     width: fit-content;
-    border: 1px solid var(--color-border);
   }
 
   .tab-btn {

@@ -124,25 +124,6 @@ export function GetProviders() {
 }
 
 /**
- * GetSTTProviders returns available STT providers.
- * @returns {$CancellablePromise<types$0.STTProviderInfo[]>}
- */
-export function GetSTTProviders() {
-    return $Call.ByID(4069245102).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType11($result);
-    }));
-}
-
-/**
- * GetSTTSetupProgress returns the setup progress for a provider.
- * @param {string} name
- * @returns {$CancellablePromise<number>}
- */
-export function GetSTTSetupProgress(name) {
-    return $Call.ByID(3416966226, name);
-}
-
-/**
  * @returns {$CancellablePromise<boolean>}
  */
 export function GetScreenRecordingPermission() {
@@ -155,7 +136,7 @@ export function GetScreenRecordingPermission() {
  */
 export function GetSpeechConfig() {
     return $Call.ByID(1620432715).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType13($result);
+        return $$createType11($result);
     }));
 }
 
@@ -165,7 +146,7 @@ export function GetSpeechConfig() {
  */
 export function GetTranslationProfiles() {
     return $Call.ByID(1590109544).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType14($result);
+        return $$createType12($result);
     }));
 }
 
@@ -241,15 +222,6 @@ export function SetProviderActive(name) {
 }
 
 /**
- * SetSTTProvider sets the active STT provider for live translation.
- * @param {string} name
- * @returns {$CancellablePromise<void>}
- */
-export function SetSTTProvider(name) {
-    return $Call.ByID(485975085, name);
-}
-
-/**
  * SetSpeechConfig sets the speech service configuration.
  * @param {types$0.SpeechConfig} cfg
  * @returns {$CancellablePromise<void>}
@@ -268,20 +240,20 @@ export function SetTranslationProfileActive(id) {
 }
 
 /**
- * SetupSTTProvider downloads/initializes an STT provider.
- * @param {string} name
- * @returns {$CancellablePromise<void>}
- */
-export function SetupSTTProvider(name) {
-    return $Call.ByID(109836374, name);
-}
-
-/**
  * Shutdown cleans up resources.
  * @returns {$CancellablePromise<void>}
  */
 export function Shutdown() {
     return $Call.ByID(2987688963);
+}
+
+/**
+ * StartAudioCapture starts capturing system audio and streams it to frontend.
+ * Audio samples are emitted as "audio-samples" events.
+ * @returns {$CancellablePromise<void>}
+ */
+export function StartAudioCapture() {
+    return $Call.ByID(189350683);
 }
 
 /**
@@ -293,6 +265,14 @@ export function Shutdown() {
  */
 export function StartLiveTranslation(sourceLang, targetLang) {
     return $Call.ByID(635984740, sourceLang, targetLang);
+}
+
+/**
+ * StopAudioCapture stops the audio capture.
+ * @returns {$CancellablePromise<void>}
+ */
+export function StopAudioCapture() {
+    return $Call.ByID(231236605);
 }
 
 /**
@@ -325,7 +305,7 @@ export function ToggleWindowVisibility() {
  */
 export function TranslateWithLLM(req) {
     return $Call.ByID(2352175956, req).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType15($result);
+        return $$createType13($result);
     }));
 }
 
@@ -371,9 +351,7 @@ const $$createType6 = $Create.Array($$createType5);
 const $$createType7 = $Create.Map($Create.Any, $Create.Any);
 const $$createType8 = types$0.LiveStatus.createFrom;
 const $$createType9 = $Create.Array($$createType1);
-const $$createType10 = types$0.STTProviderInfo.createFrom;
-const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = types$0.SpeechConfig.createFrom;
-const $$createType13 = $Create.Nullable($$createType12);
-const $$createType14 = $Create.Array($$createType3);
-const $$createType15 = types$0.TranslateResult.createFrom;
+const $$createType10 = types$0.SpeechConfig.createFrom;
+const $$createType11 = $Create.Nullable($$createType10);
+const $$createType12 = $Create.Array($$createType3);
+const $$createType13 = types$0.TranslateResult.createFrom;

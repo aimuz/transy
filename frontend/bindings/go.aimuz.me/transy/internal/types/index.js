@@ -7,10 +7,10 @@ export {
     DetectResult,
     LiveStatus,
     Provider,
-    STTProviderInfo,
     SpeechConfig,
     TranslateRequest,
     TranslateResult,
     TranslationProfile,
-    Usage
+    Usage,
+    VADState
 } from "./models.js";

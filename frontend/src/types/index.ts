@@ -72,12 +72,21 @@ export const LANGUAGE_CODE_MAP: Record<string, string> = Object.fromEntries(
 
 export type LiveTranscript = {
   id: string
-  text: string
-  translated: string
+  sourceText: string
+  targetText: string
+  sourceLang: string
+  targetLang: string
+  startTime: number
+  endTime: number
   timestamp: number
   isFinal: boolean
   confidence: number
+  // Backward compatibility
+  text?: string
+  translated?: string
 }
+
+export type VADState = 'listening' | 'speaking' | 'processing'
 
 export type LiveStatus = {
   active: boolean
@@ -86,6 +95,7 @@ export type LiveStatus = {
   duration: number
   sttProvider: string
   transcriptCount: number
+  vadState: VADState
 }
 
 export type STTProviderInfo = {
@@ -120,6 +130,23 @@ export type TranslationProfile = {
   active: boolean
   disable_thinking?: boolean
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Transcription Models
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type TranscriptionModel = {
+  id: string
+  name: string
+  description: string
+}
+
+export const TRANSCRIPTION_MODELS: TranscriptionModel[] = [
+  { id: 'gpt-4o-transcribe', name: 'GPT-4o Transcribe', description: '推荐 - 高精度转录' },
+  { id: 'gpt-4o-transcribe-diarize', name: 'GPT-4o Transcribe + Diarize', description: '支持说话人识别' },
+  { id: 'gpt-4o-mini-transcribe', name: 'GPT-4o Mini Transcribe', description: '更快速、更低成本' },
+  { id: 'whisper-1', name: 'Whisper-1', description: '经典语音识别模型' },
+]
 
 export type SpeechConfig = {
   enabled: boolean

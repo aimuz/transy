@@ -8,126 +8,109 @@ package audiocapture
 
 #include <stdlib.h>
 
-// Declaration of the Objective-C functions implemented in capture_darwin.m
-extern int startAudioCaptureWithCallback(void* goContext, int targetSampleRate);
+extern int startAudioCapture(int targetSampleRate, char** errOut);
 extern void stopAudioCapture(void);
-extern int isAudioCapturing(void);
 */
 import "C"
 
 import (
-	"fmt"
+	"errors"
 	"sync"
 	"unsafe"
 )
 
-// Global registry to map context pointers back to Go callbacks
+// Global handler for CGO callback. Only one capture at a time.
 var (
-	callbackRegistry   = make(map[uintptr]func([]float32))
-	callbackRegistryMu sync.RWMutex
-	callbackCounter    uintptr
+	globalHandler   AudioHandler
+	globalHandlerMu sync.RWMutex
 )
 
 //export goAudioCallback
-func goAudioCallback(context unsafe.Pointer, samples *C.float, count C.int) {
-	ptr := uintptr(context)
-
-	callbackRegistryMu.RLock()
-	callback, ok := callbackRegistry[ptr]
-	callbackRegistryMu.RUnlock()
-
-	if !ok || callback == nil {
-		return
-	}
-
-	// Convert C array to Go slice
+func goAudioCallback(samples *C.float, count C.int) {
 	n := int(count)
 	if n <= 0 {
 		return
 	}
 
-	goSamples := make([]float32, n)
-	cSamples := (*[1 << 28]C.float)(unsafe.Pointer(samples))[:n:n]
-	for i := 0; i < n; i++ {
-		goSamples[i] = float32(cSamples[i])
+	globalHandlerMu.RLock()
+	h := globalHandler
+	globalHandlerMu.RUnlock()
+
+	if h == nil {
+		return
 	}
 
-	callback(goSamples)
+	// Convert C array to Go slice without extra allocation.
+	// Safe because we process samples before this function returns.
+	goSamples := unsafe.Slice((*float32)(unsafe.Pointer(samples)), n)
+	h(goSamples)
 }
 
-// darwinCaptureImpl is the macOS implementation using ScreenCaptureKit.
-type darwinCaptureImpl struct {
-	contextPtr uintptr
-	capturing  bool
+// capturer is the macOS implementation using ScreenCaptureKit.
+type capturer struct {
+	sampleRate int
 	mu         sync.Mutex
+	running    bool
 }
 
-func newCaptureImpl() (captureImpl, error) {
-	return &darwinCaptureImpl{}, nil
+// New creates a Capturer for macOS.
+func New(sampleRate int) (Capturer, error) {
+	if sampleRate <= 0 {
+		sampleRate = 16000
+	}
+	return &capturer{sampleRate: sampleRate}, nil
 }
 
-func (d *darwinCaptureImpl) start(sampleRate int, callback func([]float32)) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	if d.capturing {
-		return ErrAlreadyCapturing
+func (c *capturer) Start(handler AudioHandler) error {
+	if handler == nil {
+		return errors.New("audiocapture: nil handler")
 	}
 
-	// Register callback
-	callbackRegistryMu.Lock()
-	callbackCounter++
-	d.contextPtr = callbackCounter
-	callbackRegistry[d.contextPtr] = callback
-	callbackRegistryMu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	// Start capture
-	result := C.startAudioCaptureWithCallback(unsafe.Pointer(d.contextPtr), C.int(sampleRate))
+	if c.running {
+		return ErrRunning
+	}
+
+	// Set global handler before starting capture.
+	globalHandlerMu.Lock()
+	globalHandler = handler
+	globalHandlerMu.Unlock()
+
+	var errStr *C.char
+	result := C.startAudioCapture(C.int(c.sampleRate), &errStr)
 	if result != 0 {
-		// Clean up callback
-		callbackRegistryMu.Lock()
-		delete(callbackRegistry, d.contextPtr)
-		callbackRegistryMu.Unlock()
+		globalHandlerMu.Lock()
+		globalHandler = nil
+		globalHandlerMu.Unlock()
 
-		switch result {
-		case -1:
-			return fmt.Errorf("failed to get shareable content (screen recording permission required)")
-		case -2:
-			return fmt.Errorf("no displays available")
-		case -3:
-			return fmt.Errorf("failed to add stream output")
-		case -4:
-			return fmt.Errorf("failed to start capture")
-		case -100:
-			return fmt.Errorf("macOS 12.3 or later required for ScreenCaptureKit")
-		default:
-			return fmt.Errorf("unknown error: %d", result)
+		if errStr != nil {
+			err := errors.New(C.GoString(errStr))
+			C.free(unsafe.Pointer(errStr))
+			return err
 		}
+		return errors.New("audiocapture: unknown error")
 	}
 
-	d.capturing = true
+	c.running = true
 	return nil
 }
 
-func (d *darwinCaptureImpl) stop() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+func (c *capturer) Stop() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-	if !d.capturing {
+	if !c.running {
 		return nil
 	}
 
 	C.stopAudioCapture()
 
-	// Clean up callback
-	callbackRegistryMu.Lock()
-	delete(callbackRegistry, d.contextPtr)
-	callbackRegistryMu.Unlock()
+	globalHandlerMu.Lock()
+	globalHandler = nil
+	globalHandlerMu.Unlock()
 
-	d.capturing = false
+	c.running = false
 	return nil
-}
-
-func (d *darwinCaptureImpl) isCapturing() bool {
-	return C.isAudioCapturing() == 1
 }
