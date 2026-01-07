@@ -81,9 +81,6 @@ export type LiveTranscript = {
   timestamp: number
   isFinal: boolean
   confidence: number
-  // Backward compatibility
-  text?: string
-  translated?: string
 }
 
 export type VADState = 'listening' | 'speaking' | 'processing'

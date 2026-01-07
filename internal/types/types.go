@@ -105,10 +105,6 @@ type LiveTranscript struct {
 	Timestamp  int64   `json:"timestamp"`  // Unix timestamp in milliseconds (creation time)
 	IsFinal    bool    `json:"isFinal"`    // Whether this is the final result
 	Confidence float64 `json:"confidence"` // Recognition confidence 0-1
-
-	// Backward compatibility - deprecated, use SourceText/TargetText instead
-	Text       string `json:"text,omitempty"`       // Deprecated: use SourceText
-	Translated string `json:"translated,omitempty"` // Deprecated: use TargetText
 }
 
 // VADState represents the current voice activity state.
