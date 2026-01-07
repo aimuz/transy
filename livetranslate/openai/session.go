@@ -66,7 +66,7 @@ func CreateSession(ctx context.Context, apiKey string, cfg SessionConfig) (*Sess
 						TurnDetection: realtime.RealtimeTranscriptionSessionAudioInputTurnDetectionUnionParam{
 							OfSemanticVad: &realtime.RealtimeTranscriptionSessionAudioInputTurnDetectionSemanticVadParam{
 								Type:      "semantic_vad",
-								Eagerness: "medium",
+								Eagerness: string(VADEagernessHigh),
 							},
 						},
 						Transcription: transcription,
