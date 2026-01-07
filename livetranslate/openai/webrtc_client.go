@@ -126,7 +126,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 
 	// Initialize Opus encoder (48kHz stereo)
-	opusEnc, err := opuscodec.NewEncoder(48000, 2, opuscodec.AppVoIP)
+	opusEnc, err := opuscodec.NewEncoder(48000, 2, opuscodec.AppRestrictedLowdelay)
 	if err != nil {
 		pc.Close()
 		return fmt.Errorf("create opus encoder: %w", err)
