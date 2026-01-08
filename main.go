@@ -34,6 +34,7 @@ func main() {
 			Handler: application.BundledAssetFileServer(assets),
 		},
 		Mac: application.MacOptions{
+			ActivationPolicy: application.ActivationPolicyAccessory,
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 	})
@@ -46,6 +47,13 @@ func main() {
 		Mac: application.MacWindow{
 			TitleBar:                application.MacTitleBarHiddenInsetUnified,
 			InvisibleTitleBarHeight: 38,
+			WindowLevel:             application.MacWindowLevelFloating,
+			CollectionBehavior: application.MacWindowCollectionBehaviorDefault |
+				application.MacWindowCollectionBehaviorMoveToActiveSpace |
+				application.MacWindowCollectionBehaviorManaged |
+				application.MacWindowCollectionBehaviorTransient |
+				application.MacWindowCollectionBehaviorStationary |
+				application.MacWindowCollectionBehaviorFullScreenAuxiliary,
 		},
 		DevToolsEnabled: true,
 	})
@@ -53,6 +61,10 @@ func main() {
 	// Hide instead of close for tray reopen
 	window.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
 		e.Cancel()
+		window.Hide()
+	})
+
+	window.RegisterHook(events.Mac.WindowDidResignKey, func(e *application.WindowEvent) {
 		window.Hide()
 	})
 
