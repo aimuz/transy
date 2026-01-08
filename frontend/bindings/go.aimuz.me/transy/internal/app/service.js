@@ -206,14 +206,6 @@ export function Shutdown() {
 }
 
 /**
- * StartAudioCapture starts capturing system audio.
- * @returns {$CancellablePromise<void>}
- */
-export function StartAudioCapture() {
-    return $Call.ByID(925351362);
-}
-
-/**
  * StartLiveTranslation starts real-time audio translation.
  * @param {string} sourceLang
  * @param {string} targetLang
@@ -221,14 +213,6 @@ export function StartAudioCapture() {
  */
 export function StartLiveTranslation(sourceLang, targetLang) {
     return $Call.ByID(2362686847, sourceLang, targetLang);
-}
-
-/**
- * StopAudioCapture stops the audio capture.
- * @returns {$CancellablePromise<void>}
- */
-export function StopAudioCapture() {
-    return $Call.ByID(4169985802);
 }
 
 /**
