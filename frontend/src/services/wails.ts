@@ -60,15 +60,6 @@ export async function getLiveStatus(): Promise<LiveStatus> {
   return (await App.GetLiveStatus()) as LiveStatus
 }
 
-// Audio Capture (for frontend WebRTC bridge)
-export async function startAudioCapture(): Promise<void> {
-  await App.StartAudioCapture()
-}
-
-export async function stopAudioCapture(): Promise<void> {
-  await App.StopAudioCapture()
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // New Configuration Architecture
 // ─────────────────────────────────────────────────────────────────────────────

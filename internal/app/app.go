@@ -37,7 +37,6 @@ type Service struct {
 	// Components with proper synchronization
 	translator *Translator
 	live       LiveAdapter
-	audio      AudioAdapter
 
 	// Version info (set by caller)
 	version string
@@ -83,7 +82,6 @@ func (s *Service) Shutdown() {
 		s.hotkey.Stop()
 	}
 	_ = s.live.Stop()
-	_ = s.audio.Stop()
 	if s.cache != nil {
 		if err := s.cache.Close(); err != nil {
 			slog.Error("close cache", "error", err)
@@ -202,20 +200,6 @@ func (s *Service) StopLiveTranslation() error {
 // GetLiveStatus returns the current live translation status.
 func (s *Service) GetLiveStatus() types.LiveStatus {
 	return s.live.Status()
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Audio Capture
-// ─────────────────────────────────────────────────────────────────────────────
-
-// StartAudioCapture starts capturing system audio.
-func (s *Service) StartAudioCapture() error {
-	return s.audio.Start(s.emit)
-}
-
-// StopAudioCapture stops the audio capture.
-func (s *Service) StopAudioCapture() error {
-	return s.audio.Stop()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
