@@ -452,29 +452,4 @@
   .btn-primary:hover {
     background: var(--color-primary-hover);
   }
-
-  .mode-selector {
-    display: flex;
-    gap: 16px;
-    margin-top: 4px;
-    padding: 8px;
-    background: var(--color-background);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-  }
-
-  .radio-label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
-    color: var(--color-text);
-    cursor: pointer;
-  }
-
-  .radio-label input[type='radio'] {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--color-primary);
-  }
 </style>

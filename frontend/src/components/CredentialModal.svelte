@@ -12,16 +12,25 @@
 
   let { credential = null, onClose, onSave, onToast }: Props = $props()
 
-  const isEdit = !!credential
+  const isEdit = $derived(!!credential)
 
-  // Form state
-  let name = $state(credential?.name || '')
-  let type = $state<'openai' | 'openai-compatible' | 'gemini' | 'claude'>(
-    credential?.type || 'openai'
-  )
-  let apiKey = $state(credential?.api_key || '')
-  let baseUrl = $state(credential?.base_url || '')
+  // Form state - using $state with initial values from credential
+  // These are intentionally captured once at mount time for form editing
+  let name = $state('')
+  let type = $state<'openai' | 'openai-compatible' | 'gemini' | 'claude'>('openai')
+  let apiKey = $state('')
+  let baseUrl = $state('')
   let saving = $state(false)
+
+  // Initialize form when credential changes (for edit mode)
+  $effect(() => {
+    if (credential) {
+      name = credential.name || ''
+      type = credential.type || 'openai'
+      apiKey = credential.api_key || ''
+      baseUrl = credential.base_url || ''
+    }
+  })
 
   // Type options
   const typeOptions = [

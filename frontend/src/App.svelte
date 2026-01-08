@@ -132,7 +132,7 @@
         </span>
       {/if}
     </div>
-    <button class="settings-btn" onclick={() => (showSettings = true)}>
+    <button class="settings-btn" aria-label="设置" onclick={() => (showSettings = true)}>
       <svg
         xmlns="http://www.w3.org/2000/svg"
         width="18"
