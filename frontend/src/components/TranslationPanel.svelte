@@ -355,7 +355,6 @@
   }
 
   .header {
-    margin-top: 12px;
     margin-bottom: 16px;
     display: flex;
     align-items: center;

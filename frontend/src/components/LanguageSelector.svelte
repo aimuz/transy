@@ -5,9 +5,15 @@
     value: string
     displayValue?: string
     onChange: (value: string) => void
+    excludeCodes?: string[]
   }
 
-  let { value, displayValue, onChange }: Props = $props()
+  let { value, displayValue, onChange, excludeCodes = [] }: Props = $props()
+
+  // Filter out excluded languages
+  const filteredLanguages = $derived(
+    excludeCodes.length > 0 ? LANGUAGES.filter((l) => !excludeCodes.includes(l.code)) : LANGUAGES
+  )
 
   function handleChange(e: Event) {
     const select = e.target as HTMLSelectElement
@@ -17,7 +23,7 @@
 
 <div class="language-group">
   <select {value} onchange={handleChange}>
-    {#each LANGUAGES as lang}
+    {#each filteredLanguages as lang}
       <option value={lang.code}>
         {lang.code === value && displayValue ? displayValue : lang.name}
       </option>

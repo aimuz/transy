@@ -9,7 +9,7 @@
 
   // State
   let isActive = $state(false)
-  let sourceLang = $state('auto')
+  let sourceLang = $state('en')
   let targetLang = $state('zh')
   let transcripts = $state<LiveTranscript[]>([])
   let duration = $state(0)
@@ -112,7 +112,11 @@
   <!-- Compact controls -->
   <div class="controls">
     <div class="language-row">
-      <LanguageSelector value={sourceLang} onChange={(v) => (sourceLang = v)} />
+      <LanguageSelector
+        value={sourceLang}
+        onChange={(v) => (sourceLang = v)}
+        excludeCodes={['auto']}
+      />
       <span class="arrow">→</span>
       <LanguageSelector value={targetLang} onChange={(v) => (targetLang = v)} />
     </div>
