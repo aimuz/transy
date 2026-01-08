@@ -1,12 +1,14 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"go.aimuz.me/transy/internal/types"
 )
@@ -69,8 +71,8 @@ type geminiError struct {
 	Message string `json:"message"`
 }
 
-func (c *geminiCompleter) Complete(ctx context.Context, messages []Message) (string, types.Usage, error) {
-	// Convert messages to Gemini format
+// buildRequest constructs the Gemini API request body from messages.
+func (c *geminiCompleter) buildRequest(messages []Message) geminiRequest {
 	var parts []geminiContent
 	var systemPrompt string
 
@@ -91,7 +93,7 @@ func (c *geminiCompleter) Complete(ctx context.Context, messages []Message) (str
 		})
 	}
 
-	reqBody := geminiRequest{
+	req := geminiRequest{
 		Contents: parts,
 		GenerationConfig: geminiConfig{
 			MaxOutputTokens: c.cfg.maxTokens,
@@ -99,30 +101,38 @@ func (c *geminiCompleter) Complete(ctx context.Context, messages []Message) (str
 		},
 	}
 
-	// Disable thinking for Gemini 2.5 Flash models if requested
 	if c.cfg.disableThinking {
-		reqBody.GenerationConfig.ThinkingConfig = &thinkingConfig{
+		req.GenerationConfig.ThinkingConfig = &thinkingConfig{
 			ThinkingBudget: 0,
 		}
 	}
 
 	if systemPrompt != "" {
-		reqBody.SystemInstruction = &geminiSystemInst{
+		req.SystemInstruction = &geminiSystemInst{
 			Parts: []geminiPart{{Text: systemPrompt}},
 		}
 	}
+
+	return req
+}
+
+// baseURL returns the configured or default base URL.
+func (c *geminiCompleter) baseURL() string {
+	if c.cfg.baseURL != "" {
+		return c.cfg.baseURL
+	}
+	return defaultGeminiBaseURL
+}
+
+func (c *geminiCompleter) Complete(ctx context.Context, messages []Message) (string, types.Usage, error) {
+	reqBody := c.buildRequest(messages)
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", types.Usage{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	baseURL := defaultGeminiBaseURL
-	if c.cfg.baseURL != "" {
-		baseURL = c.cfg.baseURL
-	}
-
-	url := fmt.Sprintf("%s/%s:generateContent?key=%s", baseURL, c.cfg.model, c.cfg.apiKey)
+	url := fmt.Sprintf("%s/%s:generateContent?key=%s", c.baseURL(), c.cfg.model, c.cfg.apiKey)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
@@ -154,14 +164,92 @@ func (c *geminiCompleter) Complete(ctx context.Context, messages []Message) (str
 		return "", types.Usage{}, fmt.Errorf("no candidates returned")
 	}
 
-	var usage types.Usage
-	if geminiResp.UsageMetadata != nil {
-		usage = types.Usage{
-			PromptTokens:     geminiResp.UsageMetadata.PromptTokenCount,
-			CompletionTokens: geminiResp.UsageMetadata.CandidatesTokenCount,
-			TotalTokens:      geminiResp.UsageMetadata.TotalTokenCount,
-		}
+	return geminiResp.Candidates[0].Content.Parts[0].Text, geminiToUsage(geminiResp.UsageMetadata), nil
+}
+
+// StreamComplete implements StreamCompleter for streaming responses.
+func (c *geminiCompleter) StreamComplete(ctx context.Context, messages []Message) (<-chan StreamDelta, error) {
+	reqBody := c.buildRequest(messages)
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	return geminiResp.Candidates[0].Content.Parts[0].Text, usage, nil
+	url := fmt.Sprintf("%s/%s:streamGenerateContent?alt=sse&key=%s", c.baseURL(), c.cfg.model, c.cfg.apiKey)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.cfg.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("do request: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("api error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	ch := make(chan StreamDelta, 16)
+
+	go func() {
+		defer resp.Body.Close()
+		defer close(ch)
+
+		var usage types.Usage
+		scanner := bufio.NewScanner(resp.Body)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			if line == "" || !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			data := strings.TrimPrefix(line, "data: ")
+
+			var chunk geminiResponse
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				continue
+			}
+
+			if len(chunk.Candidates) > 0 && len(chunk.Candidates[0].Content.Parts) > 0 {
+				if text := chunk.Candidates[0].Content.Parts[0].Text; text != "" {
+					select {
+					case ch <- StreamDelta{Text: text}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+
+			if chunk.UsageMetadata != nil {
+				usage = geminiToUsage(chunk.UsageMetadata)
+			}
+		}
+
+		select {
+		case ch <- StreamDelta{Done: true, Usage: usage}:
+		case <-ctx.Done():
+		}
+	}()
+
+	return ch, nil
+}
+
+// toUsage converts Gemini usage metadata to types.Usage.
+func geminiToUsage(u *geminiUsage) types.Usage {
+	if u == nil {
+		return types.Usage{}
+	}
+	return types.Usage{
+		PromptTokens:     u.PromptTokenCount,
+		CompletionTokens: u.CandidatesTokenCount,
+		TotalTokens:      u.TotalTokenCount,
+	}
 }

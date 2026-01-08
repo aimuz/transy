@@ -1,12 +1,14 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"go.aimuz.me/transy/internal/types"
 )
@@ -24,6 +26,7 @@ type claudeRequest struct {
 	Messages  []claudeMessage `json:"messages"`
 	System    string          `json:"system,omitempty"`
 	MaxTokens int             `json:"max_tokens"`
+	Stream    bool            `json:"stream,omitempty"`
 }
 
 type claudeMessage struct {
@@ -52,7 +55,21 @@ type claudeError struct {
 	Message string `json:"message"`
 }
 
-func (c *claudeCompleter) Complete(ctx context.Context, messages []Message) (string, types.Usage, error) {
+// Streaming response types
+type claudeStreamEvent struct {
+	Type  string          `json:"type"`
+	Index int             `json:"index,omitempty"`
+	Delta *claudeSSEDelta `json:"delta,omitempty"`
+	Usage *claudeUsage    `json:"usage,omitempty"`
+}
+
+type claudeSSEDelta struct {
+	Type string `json:"type,omitempty"`
+	Text string `json:"text,omitempty"`
+}
+
+// buildRequest constructs the Claude API request body from messages.
+func (c *claudeCompleter) buildRequest(messages []Message, stream bool) claudeRequest {
 	var claudeMsgs []claudeMessage
 	var systemPrompt string
 
@@ -72,31 +89,48 @@ func (c *claudeCompleter) Complete(ctx context.Context, messages []Message) (str
 		maxTokens = 1024 // Claude requires max_tokens
 	}
 
-	reqBody := claudeRequest{
+	return claudeRequest{
 		Model:     c.cfg.model,
 		Messages:  claudeMsgs,
 		System:    systemPrompt,
 		MaxTokens: maxTokens,
+		Stream:    stream,
 	}
+}
+
+// baseURL returns the configured or default base URL.
+func (c *claudeCompleter) baseURL() string {
+	if c.cfg.baseURL != "" {
+		return c.cfg.baseURL
+	}
+	return defaultClaudeBaseURL
+}
+
+// newRequest creates an HTTP request with Claude-specific headers.
+func (c *claudeCompleter) newRequest(ctx context.Context, body []byte) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL(), bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("x-api-key", c.cfg.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("content-type", "application/json")
+	return req, nil
+}
+
+func (c *claudeCompleter) Complete(ctx context.Context, messages []Message) (string, types.Usage, error) {
+	reqBody := c.buildRequest(messages, false)
 
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return "", types.Usage{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	baseURL := defaultClaudeBaseURL
-	if c.cfg.baseURL != "" {
-		baseURL = c.cfg.baseURL
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, bytes.NewBuffer(jsonBody))
+	req, err := c.newRequest(ctx, jsonBody)
 	if err != nil {
-		return "", types.Usage{}, fmt.Errorf("create request: %w", err)
+		return "", types.Usage{}, err
 	}
-
-	req.Header.Set("x-api-key", c.cfg.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("content-type", "application/json")
 
 	resp, err := c.cfg.http.Do(req)
 	if err != nil {
@@ -122,14 +156,98 @@ func (c *claudeCompleter) Complete(ctx context.Context, messages []Message) (str
 		return "", types.Usage{}, fmt.Errorf("no content returned")
 	}
 
-	var usage types.Usage
-	if claudeResp.Usage != nil {
-		usage = types.Usage{
-			PromptTokens:     claudeResp.Usage.InputTokens,
-			CompletionTokens: claudeResp.Usage.OutputTokens,
-			TotalTokens:      claudeResp.Usage.InputTokens + claudeResp.Usage.OutputTokens,
-		}
+	return claudeResp.Content[0].Text, claudeToUsage(claudeResp.Usage), nil
+}
+
+// StreamComplete implements StreamCompleter for streaming responses.
+func (c *claudeCompleter) StreamComplete(ctx context.Context, messages []Message) (<-chan StreamDelta, error) {
+	reqBody := c.buildRequest(messages, true)
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
 	}
 
-	return claudeResp.Content[0].Text, usage, nil
+	req, err := c.newRequest(ctx, jsonBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.cfg.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("do request: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("api error: %d - %s", resp.StatusCode, string(body))
+	}
+
+	ch := make(chan StreamDelta, 16)
+
+	go func() {
+		defer resp.Body.Close()
+		defer close(ch)
+
+		var usage types.Usage
+		scanner := bufio.NewScanner(resp.Body)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			if line == "" || strings.HasPrefix(line, "event:") || !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			data := strings.TrimPrefix(line, "data: ")
+
+			var event claudeStreamEvent
+			if err := json.Unmarshal([]byte(data), &event); err != nil {
+				continue
+			}
+
+			switch event.Type {
+			case "content_block_delta":
+				if event.Delta != nil && event.Delta.Text != "" {
+					select {
+					case ch <- StreamDelta{Text: event.Delta.Text}:
+					case <-ctx.Done():
+						return
+					}
+				}
+			case "message_delta":
+				if event.Usage != nil {
+					usage = types.Usage{
+						CompletionTokens: event.Usage.OutputTokens,
+					}
+				}
+			case "message_stop":
+				select {
+				case ch <- StreamDelta{Done: true, Usage: usage}:
+				case <-ctx.Done():
+				}
+				return
+			}
+		}
+
+		select {
+		case ch <- StreamDelta{Done: true, Usage: usage}:
+		case <-ctx.Done():
+		}
+	}()
+
+	return ch, nil
+}
+
+// claudeToUsage converts Claude usage to types.Usage.
+func claudeToUsage(u *claudeUsage) types.Usage {
+	if u == nil {
+		return types.Usage{}
+	}
+	return types.Usage{
+		PromptTokens:     u.InputTokens,
+		CompletionTokens: u.OutputTokens,
+		TotalTokens:      u.InputTokens + u.OutputTokens,
+	}
 }

@@ -359,6 +359,104 @@ func (s *Service) TranslateWithLLM(req types.TranslateRequest) (types.TranslateR
 	}, req)
 }
 
+// TranslateChunk is the event payload for streaming translation.
+type TranslateChunk struct {
+	Text  string      `json:"text"`
+	Done  bool        `json:"done"`
+	Usage types.Usage `json:"usage,omitempty"`
+}
+
+// TranslateWithLLMStream translates text with streaming output via events.
+func (s *Service) TranslateWithLLMStream(req types.TranslateRequest) error {
+	profile := s.cfg.GetActiveTranslationProfile()
+	if profile == nil {
+		return fmt.Errorf("no active translation profile")
+	}
+
+	cred := s.cfg.GetCredential(profile.CredentialID)
+	if cred == nil {
+		return fmt.Errorf("credential not found: %s", profile.CredentialID)
+	}
+
+	// Check cache first
+	key := s.translator.cacheKey(TranslateProfile{
+		Name:  profile.Name,
+		Model: profile.Model,
+	}, req)
+	if cached, ok := s.translator.getCached(key); ok {
+		// Emit cached result immediately
+		s.emit(EventTranslateChunk, TranslateChunk{
+			Text:  cached.Text,
+			Done:  true,
+			Usage: cached.Usage,
+		})
+		return nil
+	}
+
+	completer := llm.NewCompleter(cred.Type, cred.APIKey, cred.BaseURL, profile.Model, llm.Options{
+		MaxTokens:       profile.MaxTokens,
+		Temperature:     profile.Temperature,
+		DisableThinking: profile.DisableThinking,
+	})
+
+	// Check if completer supports streaming
+	streamer, ok := completer.(llm.StreamCompleter)
+	if !ok {
+		// Fallback to non-streaming
+		result, err := s.translator.Translate(context.Background(), completer, TranslateProfile{
+			Name:         profile.Name,
+			Model:        profile.Model,
+			SystemPrompt: profile.SystemPrompt,
+		}, req)
+		if err != nil {
+			return err
+		}
+		s.emit(EventTranslateChunk, TranslateChunk{
+			Text:  result.Text,
+			Done:  true,
+			Usage: result.Usage,
+		})
+		return nil
+	}
+
+	// Build messages
+	msgs := buildTranslateMessages(profile.SystemPrompt, req)
+
+	// Start streaming
+	ch, err := streamer.StreamComplete(context.Background(), msgs)
+	if err != nil {
+		return fmt.Errorf("stream translate: %w", err)
+	}
+
+	// Process stream in goroutine
+	go func() {
+		var fullText string
+		var usage types.Usage
+
+		for delta := range ch {
+			if delta.Text != "" {
+				fullText += delta.Text
+				s.emit(EventTranslateChunk, TranslateChunk{
+					Text: delta.Text,
+					Done: false,
+				})
+			}
+			if delta.Done {
+				usage = delta.Usage
+				s.emit(EventTranslateChunk, TranslateChunk{
+					Done:  true,
+					Usage: usage,
+				})
+			}
+		}
+
+		// Cache the complete result
+		s.translator.setCache(key, fullText, usage)
+	}()
+
+	return nil
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // API Credential Management
 // ─────────────────────────────────────────────────────────────────────────────

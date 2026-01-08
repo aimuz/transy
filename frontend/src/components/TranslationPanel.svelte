@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte'
+  import { Events } from '@wailsio/runtime'
   import LanguageSelector from './LanguageSelector.svelte'
-  import { translateWithLLM, detectLanguage, takeScreenshotAndOCR } from '../services/wails'
-  import { LANGUAGE_NAME_MAP, LANGUAGE_CODE_MAP, type Usage } from '../types'
+  import { translateWithLLMStream, detectLanguage, takeScreenshotAndOCR } from '../services/wails'
+  import { LANGUAGE_NAME_MAP, LANGUAGE_CODE_MAP, type Usage, type TranslateChunk } from '../types'
 
   type Props = {
     defaultLanguages: Record<string, string>
@@ -86,7 +87,7 @@
     }
   }
 
-  // Translate text
+  // Translate text (streaming)
   async function translate() {
     if (!sourceText.trim()) {
       targetText = ''
@@ -94,6 +95,7 @@
     }
 
     isTranslating = true
+    targetText = '' // Clear before streaming
 
     try {
       // Resolve actual source language
@@ -108,20 +110,18 @@
         actualTargetLang = defaultLanguages[actualSourceLang] || 'en'
       }
 
-      const result = await translateWithLLM({
+      // Start streaming translation - results come via events
+      await translateWithLLMStream({
         text: sourceText,
         sourceLang: actualSourceLang,
         targetLang: actualTargetLang,
       })
-
-      targetText = result.text
-      onUsageChange?.(result.usage)
     } catch (error) {
       console.error('Translation error:', error)
       onToast(String(error), 'error')
-    } finally {
       isTranslating = false
     }
+    // Note: isTranslating is set to false when 'done' event is received
   }
 
   // Handle language change
@@ -205,17 +205,33 @@
     }
   }
 
-  // Listen for clipboard events from backend
+  // Listen for clipboard events and streaming translation events
   onMount(() => {
     const handleClipboardText = (e: CustomEvent<string>) => {
       sourceText = e.detail
       detectAndTranslate()
     }
 
+    // Listen for streaming translation chunks
+    const handleTranslateChunk = (event: { data: TranslateChunk }) => {
+      const chunk = event.data
+      if (chunk.text) {
+        targetText += chunk.text
+      }
+      if (chunk.done) {
+        isTranslating = false
+        if (chunk.usage) {
+          onUsageChange?.(chunk.usage)
+        }
+      }
+    }
+
     window.addEventListener('clipboard-text', handleClipboardText as EventListener)
+    Events.On('translate-chunk', handleTranslateChunk)
 
     return () => {
       window.removeEventListener('clipboard-text', handleClipboardText as EventListener)
+      Events.Off('translate-chunk')
     }
   })
 </script>

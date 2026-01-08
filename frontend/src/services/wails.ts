@@ -8,6 +8,11 @@ export async function translateWithLLM(request: TranslateRequest): Promise<Trans
   return await App.TranslateWithLLM(request)
 }
 
+// Streaming translation - results come via 'translate-chunk' events
+export async function translateWithLLMStream(request: TranslateRequest): Promise<void> {
+  await App.TranslateWithLLMStream(request)
+}
+
 export async function detectLanguage(text: string): Promise<DetectLanguageResponse> {
   return await App.DetectLanguage(text)
 }

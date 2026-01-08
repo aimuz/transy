@@ -26,6 +26,18 @@ type Completer interface {
 	Complete(ctx context.Context, messages []Message) (string, types.Usage, error)
 }
 
+// StreamDelta represents a streaming chunk from LLM.
+type StreamDelta struct {
+	Text  string      // Incremental text content
+	Done  bool        // True if this is the final chunk
+	Usage types.Usage // Populated only when Done is true
+}
+
+// StreamCompleter performs streaming chat completions.
+type StreamCompleter interface {
+	StreamComplete(ctx context.Context, messages []Message) (<-chan StreamDelta, error)
+}
+
 // completerConfig holds all parameters needed by completers.
 // Memory layout optimized: pointers/slices first, then 64-bit, then smaller.
 type completerConfig struct {

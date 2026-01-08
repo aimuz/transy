@@ -261,6 +261,15 @@ export function TranslateWithLLM(req) {
 }
 
 /**
+ * TranslateWithLLMStream translates text with streaming output via events.
+ * @param {types$0.TranslateRequest} req
+ * @returns {$CancellablePromise<void>}
+ */
+export function TranslateWithLLMStream(req) {
+    return $Call.ByID(2490205331, req);
+}
+
+/**
  * UpdateCredential updates an existing credential.
  * @param {string} id
  * @param {types$0.APICredential} cred

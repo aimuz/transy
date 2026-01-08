@@ -7,4 +7,5 @@ const (
 	EventVADUpdate         = "live-vad-update"
 	EventSetClipboard      = "set-clipboard-text"
 	EventAccessibilityPerm = "accessibility-permission"
+	EventTranslateChunk    = "translate-chunk"
 )

@@ -38,6 +38,13 @@ export type TranslateResult = {
   usage: Usage
 }
 
+// Streaming translation event payload
+export type TranslateChunk = {
+  text: string
+  done: boolean
+  usage?: Usage
+}
+
 export type Language = {
   code: string
   name: string
