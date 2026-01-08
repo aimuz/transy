@@ -15,8 +15,8 @@
   import { TRANSCRIPTION_MODELS } from '../types'
 
   type Props = {
-    // Legacy props kept for compatibility (but not used)
-    providers: any[]
+    // Legacy props kept for compatibility (optional, not used)
+    providers?: any[]
     defaultLanguages: Record<string, string>
     onClose: () => void
     onProvidersChange: () => void

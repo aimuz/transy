@@ -2,6 +2,7 @@ package llm
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,36 +11,48 @@ import (
 	"go.aimuz.me/transy/internal/types"
 )
 
-// https://api.anthropic.com/v1/messages
 const defaultClaudeBaseURL = "https://api.anthropic.com/v1/messages"
+
+// claudeCompleter implements Completer for Claude API.
+type claudeCompleter struct {
+	cfg completerConfig
+}
+
+// Claude request/response types
+type claudeRequest struct {
+	Model     string          `json:"model"`
+	Messages  []claudeMessage `json:"messages"`
+	System    string          `json:"system,omitempty"`
+	MaxTokens int             `json:"max_tokens"`
+}
 
 type claudeMessage struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-type claudeRequest struct {
-	Model     string          `json:"model"`
-	Messages  []claudeMessage `json:"messages"`
-	System    string          `json:"system,omitempty"`
-	MaxTokens int             `json:"max_tokens,omitempty"`
-}
-
 type claudeResponse struct {
-	Content []struct {
-		Text string `json:"text"`
-	} `json:"content"`
-	Usage *struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage,omitempty"`
-	Error *struct {
-		Type    string `json:"type"`
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
+	Content []claudeContent `json:"content"`
+	Usage   *claudeUsage    `json:"usage,omitempty"`
+	Error   *claudeError    `json:"error,omitempty"`
 }
 
-func (c *Client) completeClaude(messages []Message) (string, types.Usage, error) {
+type claudeContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type claudeUsage struct {
+	InputTokens  int `json:"input_tokens"`
+	OutputTokens int `json:"output_tokens"`
+}
+
+type claudeError struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
+func (c *claudeCompleter) Complete(ctx context.Context, messages []Message) (string, types.Usage, error) {
 	var claudeMsgs []claudeMessage
 	var systemPrompt string
 
@@ -54,15 +67,16 @@ func (c *Client) completeClaude(messages []Message) (string, types.Usage, error)
 		})
 	}
 
-	reqBody := claudeRequest{
-		Model:     c.provider.Model,
-		Messages:  claudeMsgs,
-		System:    systemPrompt,
-		MaxTokens: c.provider.MaxTokens,
+	maxTokens := c.cfg.maxTokens
+	if maxTokens == 0 {
+		maxTokens = 1024 // Claude requires max_tokens
 	}
 
-	if reqBody.MaxTokens == 0 {
-		reqBody.MaxTokens = 1024 // Claude requires max_tokens
+	reqBody := claudeRequest{
+		Model:     c.cfg.model,
+		Messages:  claudeMsgs,
+		System:    systemPrompt,
+		MaxTokens: maxTokens,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -71,20 +85,20 @@ func (c *Client) completeClaude(messages []Message) (string, types.Usage, error)
 	}
 
 	baseURL := defaultClaudeBaseURL
-	if c.provider.BaseURL != "" {
-		baseURL = c.provider.BaseURL
+	if c.cfg.baseURL != "" {
+		baseURL = c.cfg.baseURL
 	}
 
-	req, err := http.NewRequest("POST", baseURL, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", types.Usage{}, fmt.Errorf("create request: %w", err)
 	}
 
-	req.Header.Set("x-api-key", c.provider.APIKey)
+	req.Header.Set("x-api-key", c.cfg.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 	req.Header.Set("content-type", "application/json")
 
-	resp, err := c.http.Do(req)
+	resp, err := c.cfg.http.Do(req)
 	if err != nil {
 		return "", types.Usage{}, fmt.Errorf("do request: %w", err)
 	}

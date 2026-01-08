@@ -2,6 +2,7 @@ package llm
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -10,22 +11,27 @@ import (
 	"go.aimuz.me/transy/internal/types"
 )
 
-// https://ai.google.dev/api/rest/v1beta/models/generateContent
 const defaultGeminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/models"
 
-type geminiPart struct {
-	Text string `json:"text"`
+// geminiCompleter implements Completer for Gemini API.
+type geminiCompleter struct {
+	cfg completerConfig
 }
 
-type geminiContent struct {
-	Role  string       `json:"role,omitempty"`
-	Parts []geminiPart `json:"parts"`
-}
-
+// Gemini request/response types
 type geminiRequest struct {
 	Contents          []geminiContent   `json:"contents"`
 	GenerationConfig  geminiConfig      `json:"generationConfig,omitempty"`
 	SystemInstruction *geminiSystemInst `json:"systemInstruction,omitempty"`
+}
+
+type geminiContent struct {
+	Role  string       `json:"role"`
+	Parts []geminiPart `json:"parts"`
+}
+
+type geminiPart struct {
+	Text string `json:"text"`
 }
 
 type geminiConfig struct {
@@ -43,23 +49,27 @@ type geminiSystemInst struct {
 }
 
 type geminiResponse struct {
-	Candidates []struct {
-		Content struct {
-			Parts []geminiPart `json:"parts"`
-		} `json:"content"`
-	} `json:"candidates"`
-	UsageMetadata *struct {
-		PromptTokenCount     int `json:"promptTokenCount"`
-		CandidatesTokenCount int `json:"candidatesTokenCount"`
-		TotalTokenCount      int `json:"totalTokenCount"`
-	} `json:"usageMetadata,omitempty"`
-	Error *struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	} `json:"error,omitempty"`
+	Candidates    []geminiCandidate `json:"candidates"`
+	UsageMetadata *geminiUsage      `json:"usageMetadata,omitempty"`
+	Error         *geminiError      `json:"error,omitempty"`
 }
 
-func (c *Client) completeGemini(messages []Message) (string, types.Usage, error) {
+type geminiCandidate struct {
+	Content geminiContent `json:"content"`
+}
+
+type geminiUsage struct {
+	PromptTokenCount     int `json:"promptTokenCount"`
+	CandidatesTokenCount int `json:"candidatesTokenCount"`
+	TotalTokenCount      int `json:"totalTokenCount"`
+}
+
+type geminiError struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
+func (c *geminiCompleter) Complete(ctx context.Context, messages []Message) (string, types.Usage, error) {
 	// Convert messages to Gemini format
 	var parts []geminiContent
 	var systemPrompt string
@@ -84,13 +94,13 @@ func (c *Client) completeGemini(messages []Message) (string, types.Usage, error)
 	reqBody := geminiRequest{
 		Contents: parts,
 		GenerationConfig: geminiConfig{
-			MaxOutputTokens: c.provider.MaxTokens,
-			Temperature:     c.provider.Temperature,
+			MaxOutputTokens: c.cfg.maxTokens,
+			Temperature:     c.cfg.temperature,
 		},
 	}
 
 	// Disable thinking for Gemini 2.5 Flash models if requested
-	if c.provider.DisableThinking {
+	if c.cfg.disableThinking {
 		reqBody.GenerationConfig.ThinkingConfig = &thinkingConfig{
 			ThinkingBudget: 0,
 		}
@@ -108,19 +118,19 @@ func (c *Client) completeGemini(messages []Message) (string, types.Usage, error)
 	}
 
 	baseURL := defaultGeminiBaseURL
-	if c.provider.BaseURL != "" {
-		baseURL = c.provider.BaseURL
+	if c.cfg.baseURL != "" {
+		baseURL = c.cfg.baseURL
 	}
 
-	url := fmt.Sprintf("%s/%s:generateContent?key=%s", baseURL, c.provider.Model, c.provider.APIKey)
+	url := fmt.Sprintf("%s/%s:generateContent?key=%s", baseURL, c.cfg.model, c.cfg.apiKey)
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", types.Usage{}, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := c.http.Do(req)
+	resp, err := c.cfg.http.Do(req)
 	if err != nil {
 		return "", types.Usage{}, fmt.Errorf("do request: %w", err)
 	}

@@ -1,32 +1,7 @@
 // Wails v3 bindings
-import * as App from '../../bindings/go.aimuz.me/transy/app.js'
-import type { Provider, TranslateRequest, DetectLanguageResponse, TranslateResult } from '../types'
-
-// Provider management
-export async function getProviders(): Promise<Provider[]> {
-  const providers = await App.GetProviders()
-  return (providers || []) as Provider[]
-}
-
-export async function addProvider(provider: Provider): Promise<void> {
-  await App.AddProvider(provider)
-}
-
-export async function updateProvider(oldName: string, provider: Provider): Promise<void> {
-  await App.UpdateProvider(oldName, provider)
-}
-
-export async function removeProvider(name: string): Promise<void> {
-  await App.RemoveProvider(name)
-}
-
-export async function setProviderActive(name: string): Promise<void> {
-  await App.SetProviderActive(name)
-}
-
-export async function getActiveProvider(): Promise<Provider | null> {
-  return (await App.GetActiveProvider()) as Provider | null
-}
+// @ts-ignore - Auto-generated Wails bindings without type declarations
+import * as App from '../../bindings/go.aimuz.me/transy/internal/app/service.js'
+import type { TranslateRequest, DetectLanguageResponse, TranslateResult } from '../types'
 
 // Translation
 export async function translateWithLLM(request: TranslateRequest): Promise<TranslateResult> {

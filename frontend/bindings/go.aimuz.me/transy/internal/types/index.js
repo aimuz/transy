@@ -6,7 +6,6 @@ export {
     APICredential,
     DetectResult,
     LiveStatus,
-    Provider,
     SpeechConfig,
     TranslateRequest,
     TranslateResult,

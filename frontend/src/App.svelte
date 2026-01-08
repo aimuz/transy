@@ -6,16 +6,10 @@
   import WebRTCTest from './components/WebRTCTest.svelte'
   import SettingsModal from './components/SettingsModal.svelte'
   import Toast from './components/Toast.svelte'
-  import {
-    getProviders,
-    getDefaultLanguages,
-    getAccessibilityPermission,
-    getVersion,
-  } from './services/wails'
-  import type { Provider, Usage } from './types'
+  import { getDefaultLanguages, getAccessibilityPermission, getVersion } from './services/wails'
+  import type { Usage } from './types'
 
   // Global state using Svelte 5 runes
-  let providers = $state<Provider[]>([])
   let defaultLanguages = $state<Record<string, string>>({})
   let showSettings = $state(false)
   let toastMessage = $state('')
@@ -39,7 +33,6 @@
   // Load initial data
   async function loadData() {
     try {
-      providers = await getProviders()
       defaultLanguages = await getDefaultLanguages()
       version = await getVersion()
 
@@ -51,9 +44,10 @@
     }
   }
 
-  // Reload providers
-  async function reloadProviders() {
-    providers = await getProviders()
+  // Reload settings (callback for SettingsModal)
+  async function reloadSettings() {
+    // Settings are managed internally by SettingsModal now
+    // This callback is kept for compatibility
   }
 
   // Reload default languages
@@ -171,10 +165,9 @@
 
   {#if showSettings}
     <SettingsModal
-      {providers}
       {defaultLanguages}
       onClose={() => (showSettings = false)}
-      onProvidersChange={reloadProviders}
+      onProvidersChange={reloadSettings}
       onLanguagesChange={reloadDefaultLanguages}
       onToast={showToast}
     />

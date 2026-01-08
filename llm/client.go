@@ -1,7 +1,8 @@
-// Package llm provides HTTP client for LLM API calls.
+// Package llm provides HTTP clients for LLM API calls.
 package llm
 
 import (
+	"context"
 	"net/http"
 
 	"go.aimuz.me/transy/internal/types"
@@ -13,31 +14,51 @@ type Message struct {
 	Content string `json:"content"`
 }
 
-// Client is an HTTP client for LLM APIs.
-type Client struct {
-	provider *types.Provider
-	http     *http.Client
+// Options configures LLM completion behavior.
+type Options struct {
+	MaxTokens       int
+	Temperature     float64
+	DisableThinking bool // For Gemini: set thinkingBudget to 0
 }
 
-// NewClient creates a new LLM client for the given provider.
-func NewClient(p *types.Provider) *Client {
-	return &Client{
-		provider: p,
-		http:     &http.Client{},
+// Completer performs chat completions.
+type Completer interface {
+	Complete(ctx context.Context, messages []Message) (string, types.Usage, error)
+}
+
+// completerConfig holds all parameters needed by completers.
+// Memory layout optimized: pointers/slices first, then 64-bit, then smaller.
+type completerConfig struct {
+	http            *http.Client
+	apiKey          string
+	baseURL         string
+	model           string
+	maxTokens       int
+	temperature     float64
+	disableThinking bool
+}
+
+// NewCompleter creates a Completer for the given provider type.
+func NewCompleter(apiType, apiKey, baseURL, model string, opts Options) Completer {
+	cfg := completerConfig{
+		http:            &http.Client{},
+		apiKey:          apiKey,
+		baseURL:         baseURL,
+		model:           model,
+		maxTokens:       opts.MaxTokens,
+		temperature:     opts.Temperature,
+		disableThinking: opts.DisableThinking,
 	}
-}
 
-// Complete sends a chat completion request and returns the response text and usage.
-func (c *Client) Complete(messages []Message) (string, types.Usage, error) {
-	switch c.provider.Type {
+	switch apiType {
 	case "gemini":
-		return c.completeGemini(messages)
+		return &geminiCompleter{cfg: cfg}
 	case "claude":
-		return c.completeClaude(messages)
+		return &claudeCompleter{cfg: cfg}
 	case "openai", "openai-compatible":
-		return c.completeOpenAI(messages)
+		return &openaiCompleter{cfg: cfg, isCompatible: apiType == "openai-compatible"}
 	default:
-		// Default to OpenAI format for compatibility
-		return c.completeOpenAI(messages)
+		// Default to OpenAI format
+		return &openaiCompleter{cfg: cfg}
 	}
 }

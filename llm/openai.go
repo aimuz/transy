@@ -2,6 +2,7 @@ package llm
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,13 @@ import (
 
 const defaultBaseURL = "https://api.openai.com/v1/chat/completions"
 
+// openaiCompleter implements Completer for OpenAI and compatible APIs.
+type openaiCompleter struct {
+	cfg          completerConfig
+	isCompatible bool
+}
+
+// OpenAI request/response types
 type openaiRequest struct {
 	Model       string    `json:"model"`
 	Messages    []Message `json:"messages"`
@@ -20,29 +28,35 @@ type openaiRequest struct {
 }
 
 type openaiResponse struct {
-	Choices []struct {
-		Message struct {
-			Content string `json:"content"`
-		} `json:"message"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-	} `json:"usage"`
+	Choices []openaiChoice `json:"choices"`
+	Usage   openaiUsage    `json:"usage"`
 }
 
-func (c *Client) completeOpenAI(messages []Message) (string, types.Usage, error) {
+type openaiChoice struct {
+	Message openaiMessage `json:"message"`
+}
+
+type openaiMessage struct {
+	Content string `json:"content"`
+}
+
+type openaiUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+func (c *openaiCompleter) Complete(ctx context.Context, messages []Message) (string, types.Usage, error) {
 	url := defaultBaseURL
-	if c.provider.Type == "openai-compatible" && c.provider.BaseURL != "" {
-		url = c.provider.BaseURL
+	if c.isCompatible && c.cfg.baseURL != "" {
+		url = c.cfg.baseURL
 	}
 
 	reqBody := openaiRequest{
-		Model:       c.provider.Model,
+		Model:       c.cfg.model,
 		Messages:    messages,
-		MaxTokens:   c.provider.MaxTokens,
-		Temperature: c.provider.Temperature,
+		MaxTokens:   c.cfg.maxTokens,
+		Temperature: c.cfg.temperature,
 	}
 
 	jsonBody, err := json.Marshal(reqBody)
@@ -50,15 +64,15 @@ func (c *Client) completeOpenAI(messages []Message) (string, types.Usage, error)
 		return "", types.Usage{}, fmt.Errorf("marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", types.Usage{}, fmt.Errorf("create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.provider.APIKey)
+	req.Header.Set("Authorization", "Bearer "+c.cfg.apiKey)
 
-	resp, err := c.http.Do(req)
+	resp, err := c.cfg.http.Do(req)
 	if err != nil {
 		return "", types.Usage{}, fmt.Errorf("do request: %w", err)
 	}
