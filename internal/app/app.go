@@ -34,6 +34,10 @@ type Service struct {
 	app    *application.App
 	window application.Window
 
+	// Tray menu references for dynamic updates
+	trayMenu    *application.Menu
+	profileMenu *application.Menu
+
 	// Components with proper synchronization
 	translator *Translator
 	live       LiveAdapter
@@ -136,6 +140,55 @@ func (s *Service) setupHotkey() {
 func (s *Service) emit(name string, data any) {
 	if s.app != nil {
 		s.app.Event.Emit(name, data)
+	}
+}
+
+// SetupSystemTray configures the system tray menu.
+// Must be called after Init.
+func (s *Service) SetupSystemTray(icon []byte) {
+	tray := s.app.SystemTray.New()
+	tray.SetIcon(icon)
+
+	s.trayMenu = s.app.NewMenu()
+	s.trayMenu.Add("显示窗口").OnClick(func(*application.Context) {
+		s.ToggleWindowVisibility()
+	})
+	s.trayMenu.Add("OCR 翻译").
+		SetAccelerator("CmdOrCtrl+Shift+O").
+		OnClick(func(*application.Context) {
+			go func() {
+				if _, err := s.TakeScreenshotAndOCR(); err != nil {
+					slog.Error("ocr from tray", "error", err)
+				}
+			}()
+		})
+
+	s.profileMenu = s.trayMenu.AddSubmenu("翻译服务")
+	s.rebuildProfileMenu()
+
+	s.trayMenu.AddSeparator()
+	s.trayMenu.Add("退出").
+		SetAccelerator("CmdOrCtrl+Q").
+		OnClick(func(*application.Context) {
+			s.Shutdown()
+			s.app.Quit()
+		})
+
+	tray.SetMenu(s.trayMenu)
+}
+
+func (s *Service) rebuildProfileMenu() {
+	if s.profileMenu == nil {
+		return
+	}
+	s.profileMenu.Clear()
+	for _, p := range s.cfg.GetTranslationProfiles() {
+		id, name, active := p.ID, p.Name, p.Active
+		s.profileMenu.AddRadio(name, active).OnClick(func(*application.Context) {
+			if err := s.SetTranslationProfileActive(id); err != nil {
+				slog.Error("set profile active", "error", err)
+			}
+		})
 	}
 }
 
@@ -361,7 +414,12 @@ func (s *Service) RemoveTranslationProfile(id string) error {
 
 // SetTranslationProfileActive sets a translation profile as active.
 func (s *Service) SetTranslationProfileActive(id string) error {
-	return s.cfg.SetTranslationProfileActive(id)
+	if err := s.cfg.SetTranslationProfileActive(id); err != nil {
+		return err
+	}
+	s.rebuildProfileMenu()
+	s.trayMenu.Update()
+	return nil
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

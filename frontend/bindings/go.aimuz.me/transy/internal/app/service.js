@@ -198,6 +198,16 @@ export function SetTranslationProfileActive(id) {
 }
 
 /**
+ * SetupSystemTray configures the system tray menu.
+ * Must be called after Init.
+ * @param {string} icon
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetupSystemTray(icon) {
+    return $Call.ByID(2145896726, icon);
+}
+
+/**
  * Shutdown cleans up resources.
  * @returns {$CancellablePromise<void>}
  */

@@ -57,52 +57,9 @@ func main() {
 	})
 
 	service.Init(wailsApp, window)
-
-	// Setup system tray
-	setupSystemTray(wailsApp, service)
+	service.SetupSystemTray(trayIconBytes)
 
 	if err := wailsApp.Run(); err != nil {
 		slog.Error("run app", "error", err)
 	}
-}
-
-func setupSystemTray(wailsApp *application.App, service *app.Service) {
-	systemTray := wailsApp.SystemTray.New()
-	systemTray.SetIcon(trayIconBytes)
-
-	trayMenu := wailsApp.NewMenu()
-	trayMenu.Add("显示窗口").OnClick(func(ctx *application.Context) {
-		service.ToggleWindowVisibility()
-	})
-	trayMenu.Add("OCR 翻译").
-		SetAccelerator("CmdOrCtrl+Shift+O").
-		OnClick(func(ctx *application.Context) {
-			go func() {
-				if _, err := service.TakeScreenshotAndOCR(); err != nil {
-					slog.Error("ocr from tray", "error", err)
-				}
-			}()
-		})
-
-	// Provider submenu
-	providerMenu := trayMenu.AddSubmenu("翻译服务")
-	profiles := service.GetTranslationProfiles()
-	for _, p := range profiles {
-		profile := p // capture
-		providerMenu.AddRadio(profile.Name, profile.Active).OnClick(func(ctx *application.Context) {
-			if err := service.SetTranslationProfileActive(profile.ID); err != nil {
-				slog.Error("set profile active", "error", err)
-			}
-		})
-	}
-
-	trayMenu.AddSeparator()
-	trayMenu.Add("退出").
-		SetAccelerator("CmdOrCtrl+Q").
-		OnClick(func(ctx *application.Context) {
-			service.Shutdown()
-			wailsApp.Quit()
-		})
-
-	systemTray.SetMenu(trayMenu)
 }
