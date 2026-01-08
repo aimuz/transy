@@ -303,48 +303,6 @@ export class TranslateRequest {
 }
 
 /**
- * TranslateResult represents the result of a translation request.
- */
-export class TranslateResult {
-    /**
-     * Creates a new TranslateResult instance.
-     * @param {Partial<TranslateResult>} [$$source = {}] - The source object to create the TranslateResult.
-     */
-    constructor($$source = {}) {
-        if (!("text" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["text"] = "";
-        }
-        if (!("usage" in $$source)) {
-            /**
-             * @member
-             * @type {Usage}
-             */
-            this["usage"] = (new Usage());
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new TranslateResult instance from a string or object.
-     * @param {any} [$$source = {}]
-     * @returns {TranslateResult}
-     */
-    static createFrom($$source = {}) {
-        const $$createField1_0 = $$createType0;
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("usage" in $$parsedSource) {
-            $$parsedSource["usage"] = $$createField1_0($$parsedSource["usage"]);
-        }
-        return new TranslateResult(/** @type {Partial<TranslateResult>} */($$parsedSource));
-    }
-}
-
-/**
  * TranslationProfile represents a translation configuration bound to an API credential.
  */
 export class TranslationProfile {
@@ -437,58 +395,6 @@ export class TranslationProfile {
 }
 
 /**
- * Usage represents token usage statistics from LLM API calls.
- */
-export class Usage {
-    /**
-     * Creates a new Usage instance.
-     * @param {Partial<Usage>} [$$source = {}] - The source object to create the Usage.
-     */
-    constructor($$source = {}) {
-        if (!("promptTokens" in $$source)) {
-            /**
-             * @member
-             * @type {number}
-             */
-            this["promptTokens"] = 0;
-        }
-        if (!("completionTokens" in $$source)) {
-            /**
-             * @member
-             * @type {number}
-             */
-            this["completionTokens"] = 0;
-        }
-        if (!("totalTokens" in $$source)) {
-            /**
-             * @member
-             * @type {number}
-             */
-            this["totalTokens"] = 0;
-        }
-        if (!("cacheHit" in $$source)) {
-            /**
-             * @member
-             * @type {boolean}
-             */
-            this["cacheHit"] = false;
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new Usage instance from a string or object.
-     * @param {any} [$$source = {}]
-     * @returns {Usage}
-     */
-    static createFrom($$source = {}) {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new Usage(/** @type {Partial<Usage>} */($$parsedSource));
-    }
-}
-
-/**
  * VADState represents the current voice activity state.
  * @readonly
  * @enum {string}
@@ -503,6 +409,3 @@ export const VADState = {
     VADStateSpeaking: "speaking",
     VADStateProcessing: "processing",
 };
-
-// Private type creation functions
-const $$createType0 = Usage.createFrom;

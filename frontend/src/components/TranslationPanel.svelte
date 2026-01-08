@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { Events } from '@wailsio/runtime'
   import LanguageSelector from './LanguageSelector.svelte'
-  import { translateWithLLMStream, detectLanguage, takeScreenshotAndOCR } from '../services/wails'
+  import { translate as Translate, detectLanguage, takeScreenshotAndOCR } from '../services/wails'
   import { LANGUAGE_NAME_MAP, LANGUAGE_CODE_MAP, type Usage, type TranslateChunk } from '../types'
 
   type Props = {
@@ -111,7 +111,7 @@
       }
 
       // Start streaming translation - results come via events
-      await translateWithLLMStream({
+      await Translate({
         text: sourceText,
         sourceLang: actualSourceLang,
         targetLang: actualTargetLang,
@@ -214,6 +214,7 @@
 
     // Listen for streaming translation chunks
     const handleTranslateChunk = (event: { data: TranslateChunk }) => {
+      console.log(event)
       const chunk = event.data
       if (chunk.text) {
         targetText += chunk.text

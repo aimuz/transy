@@ -100,7 +100,6 @@ func (la *LiveAdapter) ForwardEvents(emit func(name string, data any), translate
 
 	// Forward VAD updates
 	wg.Go(func() {
-		defer wg.Done()
 		for state := range svc.VADUpdates() {
 			emit(EventVADUpdate, state)
 		}
@@ -108,7 +107,6 @@ func (la *LiveAdapter) ForwardEvents(emit func(name string, data any), translate
 
 	// Log errors
 	wg.Go(func() {
-		defer wg.Done()
 		for err := range svc.Errors() {
 			slog.Error("live translation error", "error", err)
 		}

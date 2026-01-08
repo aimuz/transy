@@ -231,18 +231,21 @@ func (s *Service) buildLiveConfig() livetranslate.Config {
 }
 
 func (s *Service) translateAndEmit(t types.LiveTranscript) {
-	result, err := s.TranslateWithLLM(types.TranslateRequest{
+	req := types.TranslateRequest{
 		Text:       t.SourceText,
 		SourceLang: t.SourceLang,
 		TargetLang: t.TargetLang,
+	}
+	fullText := ""
+	err := s.translate(req, func(chunk TranslateChunk) {
+		fullText += chunk.Text
+		t.TargetText = fullText
+		s.emit(EventLiveTranscript, t)
 	})
 	if err != nil {
 		slog.Warn("async translate failed", "id", t.ID, "error", err)
 		return
 	}
-
-	t.TargetText = result.Text
-	s.emit(EventLiveTranscript, t)
 }
 
 // StopLiveTranslation stops real-time audio translation.
@@ -334,31 +337,6 @@ func (s *Service) RequestScreenRecordingPermission() {
 // Translation
 // ─────────────────────────────────────────────────────────────────────────────
 
-// TranslateWithLLM translates text using the active provider.
-func (s *Service) TranslateWithLLM(req types.TranslateRequest) (types.TranslateResult, error) {
-	profile := s.cfg.GetActiveTranslationProfile()
-	if profile == nil {
-		return types.TranslateResult{}, fmt.Errorf("no active translation profile")
-	}
-
-	cred := s.cfg.GetCredential(profile.CredentialID)
-	if cred == nil {
-		return types.TranslateResult{}, fmt.Errorf("credential not found: %s", profile.CredentialID)
-	}
-
-	completer := llm.NewCompleter(cred.Type, cred.APIKey, cred.BaseURL, profile.Model, llm.Options{
-		MaxTokens:       profile.MaxTokens,
-		Temperature:     profile.Temperature,
-		DisableThinking: profile.DisableThinking,
-	})
-
-	return s.translator.Translate(context.Background(), completer, TranslateProfile{
-		Name:         profile.Name,
-		Model:        profile.Model,
-		SystemPrompt: profile.SystemPrompt,
-	}, req)
-}
-
 // TranslateChunk is the event payload for streaming translation.
 type TranslateChunk struct {
 	Text  string      `json:"text"`
@@ -366,8 +344,14 @@ type TranslateChunk struct {
 	Usage types.Usage `json:"usage,omitempty"`
 }
 
+func (s *Service) Translate(req types.TranslateRequest) error {
+	return s.translate(req, func(chunk TranslateChunk) {
+		s.emit(EventTranslateChunk, chunk)
+	})
+}
+
 // TranslateWithLLMStream translates text with streaming output via events.
-func (s *Service) TranslateWithLLMStream(req types.TranslateRequest) error {
+func (s *Service) translate(req types.TranslateRequest, callback func(TranslateChunk)) error {
 	profile := s.cfg.GetActiveTranslationProfile()
 	if profile == nil {
 		return fmt.Errorf("no active translation profile")
@@ -385,7 +369,7 @@ func (s *Service) TranslateWithLLMStream(req types.TranslateRequest) error {
 	}, req)
 	if cached, ok := s.translator.getCached(key); ok {
 		// Emit cached result immediately
-		s.emit(EventTranslateChunk, TranslateChunk{
+		callback(TranslateChunk{
 			Text:  cached.Text,
 			Done:  true,
 			Usage: cached.Usage,
@@ -411,7 +395,7 @@ func (s *Service) TranslateWithLLMStream(req types.TranslateRequest) error {
 		if err != nil {
 			return err
 		}
-		s.emit(EventTranslateChunk, TranslateChunk{
+		callback(TranslateChunk{
 			Text:  result.Text,
 			Done:  true,
 			Usage: result.Usage,
@@ -430,26 +414,31 @@ func (s *Service) TranslateWithLLMStream(req types.TranslateRequest) error {
 
 	// Process stream in goroutine
 	go func() {
+		// [PIKE FIX] Panic recovery to prevent silent goroutine death
+		defer func() {
+			if r := recover(); r != nil {
+				slog.Error("panic in translate stream", "recover", r)
+			}
+		}()
+
 		var fullText string
 		var usage types.Usage
-
 		for delta := range ch {
 			if delta.Text != "" {
 				fullText += delta.Text
-				s.emit(EventTranslateChunk, TranslateChunk{
+				callback(TranslateChunk{
 					Text: delta.Text,
-					Done: false,
 				})
 			}
 			if delta.Done {
 				usage = delta.Usage
-				s.emit(EventTranslateChunk, TranslateChunk{
-					Done:  true,
-					Usage: usage,
+				callback(TranslateChunk{
+					Text:  fullText,
+					Done:  delta.Done,
+					Usage: delta.Usage,
 				})
 			}
 		}
-
 		// Cache the complete result
 		s.translator.setCache(key, fullText, usage)
 	}()

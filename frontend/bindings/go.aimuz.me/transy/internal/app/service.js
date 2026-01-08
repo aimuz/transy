@@ -250,23 +250,11 @@ export function ToggleWindowVisibility() {
 }
 
 /**
- * TranslateWithLLM translates text using the active provider.
- * @param {types$0.TranslateRequest} req
- * @returns {$CancellablePromise<types$0.TranslateResult>}
- */
-export function TranslateWithLLM(req) {
-    return $Call.ByID(4038648379, req).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType10($result);
-    }));
-}
-
-/**
- * TranslateWithLLMStream translates text with streaming output via events.
  * @param {types$0.TranslateRequest} req
  * @returns {$CancellablePromise<void>}
  */
-export function TranslateWithLLMStream(req) {
-    return $Call.ByID(2490205331, req);
+export function Translate(req) {
+    return $Call.ByID(2416210116, req);
 }
 
 /**
@@ -300,4 +288,3 @@ const $$createType6 = types$0.LiveStatus.createFrom;
 const $$createType7 = types$0.SpeechConfig.createFrom;
 const $$createType8 = $Create.Nullable($$createType7);
 const $$createType9 = $Create.Array($$createType1);
-const $$createType10 = types$0.TranslateResult.createFrom;

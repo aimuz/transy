@@ -3,14 +3,9 @@
 import * as App from '../../bindings/go.aimuz.me/transy/internal/app/service.js'
 import type { TranslateRequest, DetectLanguageResponse, TranslateResult } from '../types'
 
-// Translation
-export async function translateWithLLM(request: TranslateRequest): Promise<TranslateResult> {
-  return await App.TranslateWithLLM(request)
-}
-
 // Streaming translation - results come via 'translate-chunk' events
-export async function translateWithLLMStream(request: TranslateRequest): Promise<void> {
-  await App.TranslateWithLLMStream(request)
+export async function translate(request: TranslateRequest): Promise<void> {
+  await App.Translate(request)
 }
 
 export async function detectLanguage(text: string): Promise<DetectLanguageResponse> {

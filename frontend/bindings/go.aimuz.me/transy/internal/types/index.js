@@ -8,8 +8,6 @@ export {
     LiveStatus,
     SpeechConfig,
     TranslateRequest,
-    TranslateResult,
     TranslationProfile,
-    Usage,
     VADState
 } from "./models.js";
